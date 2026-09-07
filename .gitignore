@@ -5,3 +5,6 @@ __pycache__/
 *.wav
 *.o
 node_modules/
+nes2/main.s
+nes2/nesdoug.s
+nes2/world2_data.s
