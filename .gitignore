@@ -3,3 +3,5 @@ __pycache__/
 *$py.class
 .DS_Store
 *.wav
+*.o
+node_modules/
