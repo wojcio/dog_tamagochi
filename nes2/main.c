@@ -32,19 +32,17 @@
 // PALETTES
 // ------------------------------------------------------------------------------
 const unsigned char bg_palette[16] = {
-    0x21, // Backdrop: Sky Blue
-    0x0F, 0x30, 0x12, // Pal 0 (Sky & HUD): Black, White, Soft Blue
-    0x0F, 0x1A, 0x29, // Pal 1 (Nature): Dark Forest Green, Lush Green, Brown
-    0x0F, 0x16, 0x27, // Pal 2 (Buda & Beach): Red, Orange/Tan, Sand Yellow
-    0x0F, 0x02, 0x11  // Pal 3 (Water & Mostek): Dark Blue, Azure, White
+    0x21, 0x0F, 0x30, 0x12, // Pal 0 (Sky & HUD): Backdrop, Black, White, Soft Blue
+    0x21, 0x0F, 0x2A, 0x1A, // Pal 1 (Nature & Leaves): Backdrop, Black, Bright Green, Deep Green
+    0x21, 0x0F, 0x17, 0x27, // Pal 2 (Wood & Dirt): Backdrop, Black, Dark Wood, Warm Wood
+    0x21, 0x0F, 0x16, 0x30  // Pal 3 (Roof & Water): Backdrop, Black, Mario Red, White
 };
 
 const unsigned char spr_palette[16] = {
-    0x21,
-    0x0F, 0x27, 0x30, // Pal 0: Corgi Dog (Black outline, Golden fur, White paws)
-    0x0F, 0x30, 0x16, // Pal 1: Effects (White, Light Blue, Red)
-    0x0F, 0x16, 0x37, // Pal 2: Items (Red Ball, Golden Bone, White)
-    0x0F, 0x16, 0x28  // Pal 3: Crab (Red, Sand, White)
+    0x21, 0x0F, 0x27, 0x30, // Pal 0: Dog (Backdrop, Black outline, Golden fur, White paws/chest)
+    0x21, 0x0F, 0x12, 0x30, // Pal 1: Effects (Backdrop, Black, Blue, White)
+    0x21, 0x0F, 0x16, 0x30, // Pal 2: Items (Backdrop, Black, Red Ball, White Bone)
+    0x21, 0x0F, 0x16, 0x27  // Pal 3: Crab (Backdrop, Black, Red, Sand)
 };
 
 // ------------------------------------------------------------------------------

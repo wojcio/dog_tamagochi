@@ -13,6 +13,7 @@
 
     .import _main
     .import _world_cols_bitmap
+    .import _world_attr_cols
     .import popa, popax
     .importzp sp, sreg, ptr1, ptr2, tmp1, tmp2
 
@@ -60,6 +61,9 @@ col_draw_flag:  .res 1
 col_draw_id:    .res 1
 col_dest_hi:    .res 1
 col_dest_lo:    .res 1
+attr_dest_lo:   .res 1
+attr_dest_hi:   .res 1
+attr_ptr:       .res 2
 
 .segment "BSS"
 pal_buf:        .res 32
@@ -173,7 +177,9 @@ nmi_handler:
 
     ; 3. Column Streaming (if camera crossed an 8-pixel column boundary)
     lda col_draw_flag
-    beq @skip_col
+    bne :+
+    jmp @skip_col
+:
 
     ; Set PPUCTRL with bit 2 = 1 (+32 vertical increment)
     lda ppu_ctrl_val
@@ -208,6 +214,58 @@ nmi_handler:
     ; Restore +1 increment
     lda ppu_ctrl_val
     sta PPUCTRL
+
+    ; Check if attribute column needs update: every 4 columns (col_draw_id & 3 == 0)
+    lda col_draw_id
+    and #$03
+    bne @skip_attr
+
+    ; attr_col = (col_draw_id >> 2) & 7
+    lda col_draw_id
+    lsr
+    lsr
+    and #$07
+    ora #$C0
+    sta attr_dest_lo
+
+    ; offset in world_attr_cols = (col_draw_id & $FC) << 1
+    lda col_draw_id
+    and #$FC
+    asl
+    clc
+    adc #<_world_attr_cols
+    sta attr_ptr
+    lda #0
+    adc #>_world_attr_cols
+    sta attr_ptr+1
+
+    ; attr_dest_hi: if col_dest_hi == $24 then $27 else $23
+    lda col_dest_hi
+    cmp #$24
+    beq :+
+    lda #$23
+    bne :++
+:   lda #$27
+:   sta attr_dest_hi
+
+    ldy #0
+@attr_loop:
+    lda PPUSTATUS
+    lda attr_dest_hi
+    sta PPUADDR
+    lda attr_dest_lo
+    sta PPUADDR
+    lda (attr_ptr), y
+    sta PPUDATA
+    lda attr_dest_lo
+    clc
+    adc #8
+    sta attr_dest_lo
+    iny
+    cpy #8
+    bne @attr_loop
+
+@skip_attr:
 
 @skip_col:
     ; 4. Update PPUCTRL with scroll nametable
