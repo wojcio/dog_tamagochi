@@ -1,0 +1,13 @@
+{
+  "name": "dog-tamagotchi-nes-headless-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Headless ROM regression tests for both NES ports (jsnes + scripted inputs + RAM/nametable assertions).",
+  "scripts": {
+    "setup": "node -e \"require('fs').copyFileSync('node_modules/jsnes/dist/jsnes.js','jsnes.cjs')\"",
+    "test": "node test_nes1.js && node test_nes2.js"
+  },
+  "dependencies": {
+    "jsnes": "^2.0.1"
+  }
+}

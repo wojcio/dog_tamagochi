@@ -82,6 +82,7 @@ class World:
         self.props = []
         self.items = []
         self.ball = ToyBall(45, 18)
+        self.ball_kick_cooldown = 0
         self.clouds = []
         self.stars = []
         self.time_tick = 0
@@ -298,6 +299,10 @@ class World:
         return None
 
     def check_ball_interaction(self, dog):
+        if self.ball_kick_cooldown > 0:
+            self.ball_kick_cooldown -= 1
+            return
+
         dog_center_x = dog.x + dog.width / 2
         if abs(dog_center_x - self.ball.x) < 3.0 and abs(dog.y + dog.height - (self.ball.y + 1)) < 2.5:
             push = 1.2 if dog.facing == "right" else -1.2
@@ -306,6 +311,9 @@ class World:
             self.ball.on_ground = False
             dog.happiness = min(100.0, dog.happiness + 2.0)
             dog.add_xp(2.0)
+            dog.ball_fetches = getattr(dog, "ball_fetches", 0) + 1
+            # Cooldown prevents standing on the ball from farming XP/happiness every frame.
+            self.ball_kick_cooldown = 30
             if random.random() < 0.2:
                 dog.say("*kic! Piłeczka!* ⚽", Colors.BRIGHT_YELLOW, 18)
 

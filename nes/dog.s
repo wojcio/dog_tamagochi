@@ -85,6 +85,9 @@ update_dog:
     bcc @check_jump
     cmp #BUDA_X_MAX
     bcs @check_jump
+    ; Must be grounded (jumping into the range must not sleep mid-air)
+    lda dog_on_ground
+    beq @check_jump
     ; Fall asleep in the Buda!
     lda #MODE_SLEEP
     sta game_mode
@@ -103,6 +106,8 @@ update_dog:
     sta dog_vy
     lda #0
     sta dog_on_ground
+    lda #1
+    sta worked_flag       ; burned energy this window (tamagotchi drain)
     lda #SFX_JUMP
     jsr play_sfx
 
@@ -178,6 +183,8 @@ update_dog:
     jmp @apply_vertical
 
 @advance_anim:
+    lda #1
+    sta worked_flag       ; burned energy this window (tamagotchi drain)
     inc dog_anim_timer
     lda dog_anim_timer
     lsr a

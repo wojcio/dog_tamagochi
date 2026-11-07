@@ -10,10 +10,12 @@
     .export _pal_all, _pal_bg, _pal_spr, _pal_col, _pal_clear
     .export _sfx_play
     .export _queue_col_stream
+    .export _hud_invalidate
 
     .import _main
     .import _world_cols_bitmap
     .import _world_attr_cols
+    .import _stat_hunger, _stat_energy, _stat_happy, _stat_bones
     .import popa, popax
     .importzp sp, sreg, ptr1, ptr2, tmp1, tmp2
 
@@ -64,6 +66,13 @@ col_dest_lo:    .res 1
 attr_dest_lo:   .res 1
 attr_dest_hi:   .res 1
 attr_ptr:       .res 2
+
+; HUD change-detection cache (drawn only when a stat actually changes)
+hud_prev:       .res 4      ; hunger, energy, happy, bones from last paint
+hud_fill:       .res 1
+hud_addr:       .res 1
+hud_tens:       .res 1
+hud_ones:       .res 1
 
 .segment "BSS"
 pal_buf:        .res 32
@@ -186,11 +195,7 @@ nmi_handler:
     ora #%00000100
     sta PPUCTRL
 
-    lda col_dest_hi
-    sta PPUADDR
-    lda col_dest_lo
-    sta PPUADDR
-
+    ; Source pointer for this column's 30-row bitmap run
     ldx col_draw_id
     lda col_offset_lo, x
     clc
@@ -200,13 +205,37 @@ nmi_handler:
     adc #>_world_cols_bitmap
     sta ptr1+1
 
+    ; Segment 1: rows 0-1 (HUD frame + biome title). Titles are baked per
+    ; screen into the column data, so streaming them updates the biome name.
+    lda col_dest_hi
+    sta PPUADDR
+    lda col_dest_lo
+    sta PPUADDR
+
     ldy #0
-@stream_col:
+@stream_seg1:
+    lda (ptr1), y
+    sta PPUDATA
+    iny
+    cpy #2
+    bne @stream_seg1
+
+    ; Segment 2: rows 4-29. Rows 2-3 are skipped: the live meters and bone
+    ; counter are painted there by hud_refresh and must not be overwritten.
+    lda col_dest_hi
+    sta PPUADDR
+    lda col_dest_lo
+    clc
+    adc #128                ; 4 rows x 32 (column offset never carries past $FF)
+    sta PPUADDR
+
+    ldy #4
+@stream_seg2:
     lda (ptr1), y
     sta PPUDATA
     iny
     cpy #30
-    bne @stream_col
+    bne @stream_seg2
 
     lda #0
     sta col_draw_flag
@@ -268,6 +297,9 @@ nmi_handler:
 @skip_attr:
 
 @skip_col:
+    ; 3b. HUD meters & bone counter (writes only on change)
+    jsr hud_refresh
+
     ; 4. Update PPUCTRL with scroll nametable
     lda ppu_ctrl_val
     and #%11111100
@@ -325,6 +357,131 @@ _queue_col_stream:
 @set_flag:
     lda #1
     sta col_draw_flag
+    rts
+
+; ------------------------------------------------------------------------------
+; HUD REFRESH: paints the three meters and the bone counter into BOTH
+; nametables, but only when a value actually changed (VBlank-budget friendly).
+; Tiles: $7A filled cell, $7B empty cell, $7C right border, $84+'0' digits.
+; ------------------------------------------------------------------------------
+_hud_invalidate:
+    lda #0
+    sta hud_prev+0
+    sta hud_prev+1
+    sta hud_prev+2
+    sta hud_prev+3
+    rts
+
+hud_refresh:
+    lda _stat_hunger
+    cmp hud_prev+0
+    beq @nrg
+    sta hud_prev+0
+    jsr @calc_fill
+    sta hud_fill
+    lda #$48                ; row 2, col 8
+    sta hud_addr
+    jsr @write_bar
+@nrg:
+    lda _stat_energy
+    cmp hud_prev+1
+    beq @hpy
+    sta hud_prev+1
+    jsr @calc_fill
+    sta hud_fill
+    lda #$56                ; row 2, col 22
+    sta hud_addr
+    jsr @write_bar
+@hpy:
+    lda _stat_happy
+    cmp hud_prev+2
+    beq @bones
+    sta hud_prev+2
+    jsr @calc_fill
+    sta hud_fill
+    lda #$68                ; row 3, col 8
+    sta hud_addr
+    jsr @write_bar
+@bones:
+    lda _stat_bones
+    cmp hud_prev+3
+    beq @done
+    sta hud_prev+3
+    ldx #$FF                ; divide by 10: X = tens, A = ones
+    sec
+@div10:
+    inx
+    sbc #10
+    bcs @div10
+    adc #10                 ; restore remainder
+    clc
+    adc #$84
+    sta hud_ones
+    txa
+    clc
+    adc #$84
+    sta hud_tens
+
+    lda #$20
+    sta PPUADDR
+    lda #$76                ; row 3, col 22
+    sta PPUADDR
+    lda hud_tens
+    sta PPUDATA
+    lda hud_ones
+    sta PPUDATA
+    lda #$24
+    sta PPUADDR
+    lda #$76
+    sta PPUADDR
+    lda hud_tens
+    sta PPUDATA
+    lda hud_ones
+    sta PPUDATA
+@done:
+    rts
+
+; A = stat 0..100 -> A = bar fill 0..5
+@calc_fill:
+    ldx #0
+@cf:
+    cmp #20
+    bcc @cf_done
+    sec
+    sbc #20
+    inx
+    jmp @cf
+@cf_done:
+    txa
+    rts
+
+; Writes a 6-tile bar (5 cells + right border) at hud_addr in both NTs.
+; In: hud_fill (0..5), hud_addr (nametable column offset of the row).
+@write_bar:
+    lda #$20
+    jsr @wb_nt
+    lda #$24
+@wb_nt:
+    sta PPUADDR
+    lda hud_addr
+    sta PPUADDR
+    ldx #0
+@wb_cell:
+    txa
+    cmp hud_fill
+    bcs @wb_empty
+    lda #$7A
+    sta PPUDATA
+    jmp @wb_next
+@wb_empty:
+    lda #$7B
+    sta PPUDATA
+@wb_next:
+    inx
+    cpx #5
+    bne @wb_cell
+    lda #$7C                ; right border
+    sta PPUDATA
     rts
 
 ; ------------------------------------------------------------------------------

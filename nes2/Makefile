@@ -5,7 +5,7 @@ LD65 = ld65
 TARGET = dog_tamagotchi2.nes
 CC65_PATH = /opt/homebrew/opt/cc65/share/cc65
 
-all: $(TARGET)
+all: $(TARGET) web
 
 graphics2.chr: tools/make_chr2.py
 	python3 tools/make_chr2.py graphics2.chr
@@ -40,7 +40,11 @@ $(TARGET): nes.cfg neslib.o main.o nesdoug.o world2_data.o
 	@echo "🎮 SUCCESS: Built $(TARGET) (NES2 C Edition with Bitmaps)!"
 	@echo "========================================================="
 
+# Refresh the base64 ROM embedded in the browser page so play2.html never rots
+web: $(TARGET)
+	python3 tools/embed_rom.py $(TARGET) play2.html
+
 clean:
 	rm -f neslib.o main.o nesdoug.o world2_data.o main.s nesdoug.s world2_data.s $(TARGET) graphics2.chr world2_data.h world2_data.c
 
-.PHONY: all clean
+.PHONY: all clean web

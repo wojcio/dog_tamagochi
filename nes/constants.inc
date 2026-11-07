@@ -64,6 +64,9 @@ GROUND_Y        = 152   ; Dog bottom (Y+24) lands on row 22 (Y=176)
 BUDA_X_MIN      = 16    ; Buda entrance area
 BUDA_X_MAX      = 60
 
+BOWL_X_MIN      = 60    ; Food bowl sits at map col 9 (px 72..79), by the buda
+BOWL_X_MAX      = 84
+
 WORLD_WIDTH     = 1024  ; 4 Biomes (4 x 256 px)
 MAX_DOG_X       = 980
 MAX_CAM_X       = 768   ; 1024 - 256

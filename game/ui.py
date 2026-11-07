@@ -3,9 +3,41 @@ Game UI, Multi-Biome World Renderer, Day/Night Lighting, Tamagotchi HUD,
 Tricks Menu, Gardener Shop, and Breed Selector.
 """
 
-from game.engine import Colors
+import re
+import time
+
+from game.engine import Colors, str_width
 from game.dog import BREEDS, TRICKS, SHOP_ITEMS
 from game.audio import audio
+from game import quests as QuestSystem
+
+def visible_width(s):
+    """Width of a string that may contain ANSI escape codes and emoji."""
+    return str_width(re.sub(r'\033\[[0-9;]*[A-Za-z]', '', s))
+
+def center_text(text, width):
+    """Center text within `width` columns, counting emoji as 2 cells."""
+    pad = max(0, width - visible_width(text))
+    left = pad // 2
+    return ' ' * left + text + ' ' * (pad - left)
+
+TITLE_ART = [
+    "  ██████╗  ██████╗  ██████╗  ████████╗ █████╗ ███╗   ███╗ █████╗  ██████╗  ██████╗ ████████╗ ██████╗██╗  ██╗██╗",
+    "  ██╔══██╗██╔═══██╗██╔════╝  ╚══██╔══╝██╔══██╗████╗ ████║██╔══██╗██╔════╝ ██╔═══██╗╚══██╔══╝██╔════╝██║  ██║██║",
+    "  ██║  ██║██║   ██║██║  ███╗    ██║   ███████║██╔████╔██║███████║██║  ███╗██║   ██║   ██║   ██║     ███████║██║",
+    "  ██║  ██║██║   ██║██║   ██║    ██║   ██╔══██║██║╚██╔╝██║██╔══██║██║   ██║██║   ██║   ██║   ██║     ██╔══██║██║",
+    "  ██████╔╝╚██████╔╝╚██████╔╝    ██║   ██║  ██║██║ ╚═╝ ██║██║  ██║╚██████╔╝╚██████╔╝   ██║   ╚██████╗██║  ██║██║",
+    "  ╚═════╝  ╚═════╝  ╚═════╝     ╚═╝   ╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝    ╚═╝    ╚═════╝╚═╝  ╚═╝╚═╝"
+]
+
+def draw_banner(terminal, subtitle="🐾 PLATFORMOWY SYMULATOR PSA & TAMAGOTCHI 2D 🐾", top=1):
+    """Draw the shared ASCII title + emoji subtitle, centered and width-correct."""
+    w = terminal.target_width
+    for idx, line in enumerate(TITLE_ART):
+        terminal.draw_text(max(0, (w - len(line)) // 2), top + idx, line, Colors.GOLD + Colors.BOLD)
+    if subtitle:
+        terminal.draw_text(max(0, (w - visible_width(subtitle)) // 2), top + len(TITLE_ART) + 1,
+                           subtitle, Colors.BRIGHT_CYAN + Colors.BOLD)
 
 def create_bar(value, max_value=100.0, length=8, fill_color=Colors.BRIGHT_GREEN, empty_color=Colors.DARK_GRAY):
     clamped = max(0.0, min(max_value, value))
@@ -21,9 +53,11 @@ class Renderer:
         self.view_height = terminal.target_height
         self.game_height = 20
         self.hud_height = 8
+        self._quests_ctx = None
 
-    def render_world_and_hud(self, world, dog, npcs, pigeons, cats, crabs, modal_state=None, modal_data=None):
+    def render_world_and_hud(self, world, dog, npcs, pigeons, cats, crabs, modal_state=None, modal_data=None, quests=None):
         self.term.clear_buffer()
+        self._quests_ctx = quests
 
         # Camera centering on dog
         camera_x = int(dog.x + dog.width // 2 - self.view_width // 2)
@@ -340,12 +374,14 @@ class Renderer:
             self._render_tricks_modal(dog)
         elif modal_state == "shop":
             self._render_shop_modal(dog, modal_data or 0)
+        elif modal_state == "quests":
+            self._render_quest_modal(dog, modal_data)
 
         # 12. Render Tamagotchi HUD
-        self.render_hud(dog, world)
+        self.render_hud(dog, world, quests=self._quests_ctx)
 
     def _draw_speech_bubble(self, x, y, text, color=Colors.BRIGHT_WHITE):
-        clean_len = len(text)
+        clean_len = str_width(text)
         bx = max(1, min(self.view_width - clean_len - 3, x))
         by = max(0, y)
 
@@ -360,7 +396,7 @@ class Renderer:
         my = 4
 
         self.term.draw_text(mx, my,     f"╔{'═' * (w - 2)}╗", Colors.GOLD + Colors.BOLD)
-        self.term.draw_text(mx, my + 1, f"║{' 🎪 AKADEMIA PSICH SZTUCZEK [T - Zamknij] '.center(w - 2)}║", Colors.BRIGHT_YELLOW + Colors.BOLD)
+        self.term.draw_text(mx, my + 1, f"║{center_text(' 🎪 AKADEMIA PSICH SZTUCZEK [T - Zamknij] ', w - 2)}║", Colors.BRIGHT_YELLOW + Colors.BOLD)
         self.term.draw_text(mx, my + 2, f"╠{'═' * (w - 2)}╣", Colors.GOLD)
 
         for i, (k, trick) in enumerate(TRICKS.items()):
@@ -383,7 +419,7 @@ class Renderer:
         my = 4
 
         self.term.draw_text(mx, my,     f"╔{'═' * (w - 2)}╗", Colors.GOLD + Colors.BOLD)
-        self.term.draw_text(mx, my + 1, f"║{' 👨‍🌾 SKLEPIK PANA OGRODNIKA [K - Zamknij] '.center(w - 2)}║", Colors.BRIGHT_YELLOW + Colors.BOLD)
+        self.term.draw_text(mx, my + 1, f"║{center_text(' 🪴 SKLEPIK PANA OGRODNIKA [K - Zamknij] ', w - 2)}║", Colors.BRIGHT_YELLOW + Colors.BOLD)
         self.term.draw_text(mx, my + 2, f"╠{'═' * (w - 2)}╣", Colors.GOLD)
 
         item_keys = list(SHOP_ITEMS.keys())
@@ -410,7 +446,46 @@ class Renderer:
         self.term.draw_text(mx + 2, my + 9, f"🦴 Twoje Psie Kostki: {dog.bones_currency} | Użyj [W/S/↑/↓] wybór, [ENTER] Kup/Załóż, [U] Zdejmij", Colors.BRIGHT_CYAN)
         self.term.draw_text(mx, my + 10, f"╚{'═' * (w - 2)}╝", Colors.GOLD + Colors.BOLD)
 
-    def render_hud(self, dog, world):
+    def _render_quest_modal(self, dog, quest_state):
+        w = 64
+        mx = (self.view_width - w) // 2
+        my = 4
+
+        self.term.draw_text(mx, my,     f"╔{'═' * (w - 2)}╗", Colors.GOLD + Colors.BOLD)
+        self.term.draw_text(mx, my + 1, f"║{center_text(' 📋 CODZIENNE ZADANIA [R - Zamknij] ', w - 2)}║", Colors.BRIGHT_YELLOW + Colors.BOLD)
+        self.term.draw_text(mx, my + 2, f"╠{'═' * (w - 2)}╣", Colors.GOLD)
+
+        done = QuestSystem.done_count(quest_state)
+        total = QuestSystem.total_count(quest_state)
+
+        y = my + 3
+        for q in (quest_state or {}).get("quests", []):
+            prog = QuestSystem.progress_of(q, dog)
+            if q["done"]:
+                bar = create_bar(1, 1, 12, Colors.BRIGHT_GREEN)
+                line_col = Colors.BRIGHT_GREEN
+                mark = "✓"
+            else:
+                bar = create_bar(min(prog, q["target"]), q["target"], 12, Colors.GOLD, Colors.DARK_GRAY)
+                line_col = Colors.BRIGHT_WHITE
+                mark = "○"
+            got = int(prog)
+            label = f"{mark} {q['text']}"
+            if visible_width(label) > w - 26:
+                label = label[:w - 28]
+            tail = f"{got}/{q['target']}"
+            self.term.draw_text(mx + 2, y, label, line_col)
+            self.term.draw_text(mx + w - 18, y, f"[{bar}]", line_col)
+            self.term.draw_text(mx + w - 6, y, tail, Colors.BRIGHT_CYAN)
+            y += 1
+
+        earned = sum(q["bones"] for q in (quest_state or {}).get("quests", []) if q["done"])
+        self.term.draw_text(mx + 2, y + 1,
+                            f"Ukończone dziś: {done}/{total} | Nagroda za dzień: {earned} 🦴 | Nowe zadania co dobę 🌅",
+                            Colors.BRIGHT_CYAN)
+        self.term.draw_text(mx, y + 2, f"╚{'═' * (w - 2)}╝", Colors.GOLD + Colors.BOLD)
+
+    def render_hud(self, dog, world, quests=None):
         hud_y = world.ground_base_y + 2
         w = self.view_width
 
@@ -423,13 +498,22 @@ class Renderer:
         mood_txt, mood_col = dog.get_status_mood()
 
         equipped_tag = f" {SHOP_ITEMS[dog.equipped_item]['icon']}" if dog.equipped_item else ""
-        header = f" 🐕 {Colors.BOLD}{dog.breed.name.upper()}{equipped_tag}{Colors.RESET} | {zone_col}{zone_ico} {zone_name}{Colors.RESET} | {time_name} | {mood_col}{mood_txt}{Colors.RESET}"
+        name = getattr(dog, "name", "") or ""
+        identity = f"{Colors.BOLD}{name}·{dog.breed.name}{Colors.RESET}" if name else f"{Colors.BOLD}{dog.breed.name.upper()}{Colors.RESET}"
+        header = f" 🐕 {identity}{equipped_tag} | {zone_col}{zone_ico} {zone_name}{Colors.RESET} | {time_name} | {mood_col}{mood_txt}{Colors.RESET}"
         self.term.draw_text(0, hud_y + 1, header)
-        
-        # Level & Currency in header right
+
+        # Level & Currency in header right (compact; walk distance lives in achievements)
+        days = getattr(dog, "days_together", 0)
         xp_needed = dog.level * 100
-        stats_hdr = f"⭐ Poz. {dog.level} ({int(dog.xp)}/{xp_needed} XP) | 🦴 Kostki: {dog.bones_currency} | 🐾 {int(dog.walk_distance)}m "
-        self.term.draw_text(max(0, w - len(stats_hdr) + 8), hud_y + 1, stats_hdr, Colors.GOLD + Colors.BOLD)
+        badge = ""
+        if quests and QuestSystem.total_count(quests):
+            badge = f" | 📋 {QuestSystem.done_count(quests)}/{QuestSystem.total_count(quests)}"
+        stats_hdr = f"⭐ Poz. {dog.level} ({int(dog.xp)}/{xp_needed} XP) | 🦴 {dog.bones_currency} | 📅 {days}d{badge}"
+        # Long dog names can collide with the stats; drop the XP fraction first.
+        if visible_width(header) + visible_width(stats_hdr) > w - 1:
+            stats_hdr = f"⭐ {dog.level} | 🦴 {dog.bones_currency} | 📅 {days}d{badge}"
+        self.term.draw_text(max(0, w - visible_width(stats_hdr)), hud_y + 1, stats_hdr, Colors.GOLD + Colors.BOLD)
 
         # Line 2: Tamagotchi Need Bars
         h_color = Colors.BRIGHT_GREEN if dog.hunger > 40 else (Colors.YELLOW if dog.hunger > 20 else Colors.BRIGHT_RED)
@@ -490,23 +574,10 @@ def draw_breed_selection_menu(terminal, selected_index=0):
     w = terminal.target_width
     h = terminal.target_height
 
-    title_art = [
-        "  ██████╗  ██████╗  ██████╗  ████████╗ █████╗ ███╗   ███╗ █████╗  ██████╗  ██████╗ ████████╗ ██████╗██╗  ██╗██╗",
-        "  ██╔══██╗██╔═══██╗██╔════╝  ╚══██╔══╝██╔══██╗████╗ ████║██╔══██╗██╔════╝ ██╔═══██╗╚══██╔══╝██╔════╝██║  ██║██║",
-        "  ██║  ██║██║   ██║██║  ███╗    ██║   ███████║██╔████╔██║███████║██║  ███╗██║   ██║   ██║   ██║     ███████║██║",
-        "  ██║  ██║██║   ██║██║   ██║    ██║   ██╔══██║██║╚██╔╝██║██╔══██║██║   ██║██║   ██║   ██║   ██║     ██╔══██║██║",
-        "  ██████╔╝╚██████╔╝╚██████╔╝    ██║   ██║  ██║██║ ╚═╝ ██║██║  ██║╚██████╔╝╚██████╔╝   ██║   ╚██████╗██║  ██║██║",
-        "  ╚═════╝  ╚═════╝  ╚═════╝     ╚═╝   ╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝    ╚═╝    ╚═════╝╚═╝  ╚═╝╚═╝"
-    ]
-
-    for idx, line in enumerate(title_art):
-        terminal.draw_text(max(0, (w - len(line)) // 2), 1 + idx, line, Colors.GOLD + Colors.BOLD)
-
-    sub = "🐾 PLATFORMOWY SYMULATOR PSA & TAMAGOTCHI 2D 🐾"
-    terminal.draw_text((w - len(sub)) // 2, 8, sub, Colors.BRIGHT_CYAN + Colors.BOLD)
+    draw_banner(terminal)
 
     prompt = "--- WYBIERZ SWOJĄ RASĘ PIESKA ---"
-    terminal.draw_text((w - len(prompt)) // 2, 10, prompt, Colors.BRIGHT_WHITE + Colors.UNDERLINE)
+    terminal.draw_text((w - visible_width(prompt)) // 2, 10, prompt, Colors.BRIGHT_WHITE + Colors.UNDERLINE)
 
     breed_keys = list(BREEDS.keys())
     
@@ -567,5 +638,89 @@ def draw_breed_selection_menu(terminal, selected_index=0):
         if is_selected:
             terminal.draw_text(bx + 3, by + 11, "▲ [WYBRANY] ▲", Colors.BRIGHT_GREEN + Colors.BOLD)
 
-    footer = "Użyj [← / → / A / D] aby wybrać rasę, wciśnij [ENTER / SPACJA] aby rozpocząć grę! [Q] Wyjście"
-    terminal.draw_text((w - len(footer)) // 2, h - 3, footer, Colors.BRIGHT_CYAN)
+    footer = "Użyj [← / → / A / D] aby wybrać rasę, wciśnij [ENTER / SPACJA] aby nadać imię! [Q] Wyjście"
+    terminal.draw_text(max(0, (w - visible_width(footer)) // 2), h - 3, footer, Colors.BRIGHT_CYAN)
+
+
+def draw_start_menu(terminal, save_info, selected=0):
+    """Resume / New-game start screen shown when a save exists.
+
+    save_info: dict(name, breed_name, level, days, bones). selected: 0=Continue, 1=New.
+    """
+    terminal.clear_buffer()
+    w = terminal.target_width
+    h = terminal.target_height
+    draw_banner(terminal, subtitle="🐾 POWRÓT DO DOMU 🐾")
+
+    name = save_info.get("name") or "Piesek"
+    breed = save_info.get("breed_name", "")
+    level = save_info.get("level", 1)
+    days = save_info.get("days", 0)
+    bones = save_info.get("bones", 0)
+
+    box_w = 56
+    bx = (w - box_w) // 2
+    by = 11
+
+    terminal.draw_text(bx, by,     "╔" + "═" * (box_w - 2) + "╗", Colors.GOLD + Colors.BOLD)
+    info = center_text(f"🏠 {name}  ·  {breed}", box_w - 2)
+    terminal.draw_text(bx, by + 1, "║" + info + "║", Colors.BRIGHT_YELLOW + Colors.BOLD)
+    stats = center_text(f"⭐ Poz. {level}   📅 Razem: {days} dni   🦴 {bones}", box_w - 2)
+    terminal.draw_text(bx, by + 2, "║" + stats + "║", Colors.BRIGHT_CYAN)
+    terminal.draw_text(bx, by + 3, "╚" + "═" * (box_w - 2) + "╝", Colors.GOLD + Colors.BOLD)
+
+    opt1 = center_text("[ENTER]  Kontynuuj opiekę nad pieskiem", box_w)
+    opt2 = center_text("[N]  Adoptuj nowego szczeniaka (nadpisze zapis)", box_w)
+    c1 = Colors.BRIGHT_GREEN + Colors.BOLD if selected == 0 else Colors.WHITE
+    c2 = Colors.BRIGHT_MAGENTA + Colors.BOLD if selected == 1 else Colors.WHITE
+    m1 = "▶ " if selected == 0 else "  "
+    m2 = "▶ " if selected == 1 else "  "
+    terminal.draw_text(bx, by + 5, m1 + opt1, c1)
+    terminal.draw_text(bx, by + 6, m2 + opt2, c2)
+
+    foot = "[↑/↓] wybór   [Q] Wyjdź"
+    terminal.draw_text(max(0, (w - visible_width(foot)) // 2), h - 3, foot, Colors.DARK_GRAY)
+
+
+def draw_name_input(terminal, name_buffer, breed, max_len=14):
+    """Text-entry screen to name the new dog. Draws a breed sprite + input box."""
+    terminal.clear_buffer()
+    w = terminal.target_width
+    h = terminal.target_height
+    draw_banner(terminal, subtitle="🐾 ADOPTUJ SZCZENIAKA 🐾")
+
+    prompt = f"Jak nazwiesz swojego {breed.name}?"
+    terminal.draw_text(max(0, (w - visible_width(prompt)) // 2), 11, prompt, Colors.BRIGHT_WHITE + Colors.BOLD)
+
+    # Breed sprite preview
+    art = {
+        "corgi":      [" /^^\\ ", "(•ω•) )", " /  \\ "],
+        "dachshund":  [" (`.` ) ", "(•o•)==~", " /    \\ "],
+        "setter":     [" (~~)  ", "(•v•)~>", " /~\\~ "],
+        "shiba":      [" ^_^   ", "(•ᴥ•) @", " /  \\ "],
+        "poodle":     ["  888  ", "(•w•) *", " c_c   "],
+    }.get(breed_key_of(breed), [" (•ω•) "])
+    sx = (w - 9) // 2
+    for i, row in enumerate(art):
+        terminal.draw_text(sx, 13 + i, row, breed.fur + Colors.BOLD)
+
+    # Input box
+    box_w = max(24, min(max_len + 6, 40))
+    bx = (w - box_w) // 2
+    by = 17
+    terminal.draw_text(bx, by, "┌" + "─" * (box_w - 2) + "┐", Colors.GOLD + Colors.BOLD)
+    field = name_buffer + ("█" if (int(time.time() * 2) % 2 == 0) else " ")
+    field = field[:max_len]
+    terminal.draw_text(bx + 2, by + 1, field, Colors.BRIGHT_GREEN + Colors.BOLD)
+    terminal.draw_text(bx, by + 2, "└" + "─" * (box_w - 2) + "┘", Colors.GOLD + Colors.BOLD)
+
+    hint = "[a-z] wpisz imię   [⌫] cofnij   [ENTER] gotowe   [ESC] pusty"
+    terminal.draw_text(max(0, (w - visible_width(hint)) // 2), by + 4, hint, Colors.DARK_GRAY)
+
+
+def breed_key_of(breed):
+    """Reverse-lookup a breed key from its DogBreed object."""
+    for k, v in BREEDS.items():
+        if v is breed:
+            return k
+    return "corgi"

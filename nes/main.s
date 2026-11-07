@@ -53,6 +53,13 @@ hunger_bar_val: .res 1
 energy_bar_val: .res 1
 happy_bar_val:  .res 1
 
+; Interaction cooldowns & HUD change-detection cache
+worked_flag:    .res 1      ; dog ran/jumped during current needs window
+eat_timer:      .res 1      ; eating SFX throttle (frames)
+toyball_cd:     .res 1      ; ball kick cooldown (frames)
+hud_cache:      .res 4      ; last painted hunger/energy/happy/bones
+bar_fill:       .res 1
+
 ; APU Sound Engine State
 sfx_playing:    .res 1
 sfx_timer:      .res 1
@@ -236,14 +243,34 @@ nmi_handler:
     adc #>world_cols_data
     sta ptr_hi
 
-    ; Stream 30 bytes down the column
+    ; Segment 1: rows 0-1 (frame + baked per-screen biome title, keeps titles
+    ; live while scrolling). Rows 2-3 are the dynamic meters: they are painted
+    ; by update_hud_vram below and must NOT be overwritten here.
     ldy #0
-@stream_30:
+@stream_top:
+    lda (ptr_lo), y
+    sta PPUDATA
+    iny
+    cpy #2
+    bne @stream_top
+
+    ; Re-arm PPU address to row 4 (col base + 4*32). PPUDATA reads could skip
+    ; but re-setting the full address is exact and glitch-free.
+    lda col_dest_hi
+    sta PPUADDR
+    lda col_dest_lo
+    clc
+    adc #128                ; 4 rows x 32; column offset never carries past $FF
+    sta PPUADDR
+
+    ; Segment 2: rows 4-29 (source resumes at row 4)
+    ldy #4
+@stream_rest:
     lda (ptr_lo), y
     sta PPUDATA
     iny
     cpy #30
-    bne @stream_30
+    bne @stream_rest
 
     lda #0
     sta col_draw_flag

@@ -7,6 +7,9 @@
 #include "nesdoug.h"
 #include "world2_data.h"
 
+// Implemented in neslib.s: resets the NMI HUD painter's change-detection cache.
+void hud_invalidate(void);
+
 // ------------------------------------------------------------------------------
 // CONSTANTS & DEFINITIONS
 // ------------------------------------------------------------------------------
@@ -129,6 +132,11 @@ unsigned char dog_anim_frame = 0;
 unsigned char bark_timer = 0;
 unsigned char game_mode = MODE_PLAY;
 
+// Timers for interaction cooldowns (frames)
+unsigned char ball_cd   = 0;   // toy ball kick cooldown (anti SFX-spam)
+unsigned char eat_timer = 0;   // eating sfx repeat throttle
+unsigned char worked_flag = 0; // dog ran/jumped during this needs window
+
 // Camera & Scrolling
 unsigned int cam_x = 0;
 unsigned char cam_col = 0;
@@ -205,30 +213,13 @@ void stream_column(unsigned char col_id) {
 }
 
 // ------------------------------------------------------------------------------
-// UPDATE HUD METERS IN VRAM BUFFER
+// HUD METERS are painted directly in the VBlank NMI (see hud_refresh in
+// neslib.s) with change detection, writing both nametables. The old C path
+// queued tiles into a VRAM buffer that nothing ever flushed, so the meters
+// were frozen forever. The bowl is at map col 6 (world px 48..56) by the buda.
 // ------------------------------------------------------------------------------
-void update_hud_meter(unsigned char val, unsigned int nt_addr) {
-    static unsigned char bar[6];
-    unsigned char fill = val / 20; // 0..5
-    unsigned char i;
-    for (i = 0; i < 5; ++i) {
-        bar[i] = (i < fill) ? T_BAR_F : T_BAR_E;
-    }
-    bar[5] = T_BAR_R;
-    multi_vram_buffer_horz((const char*)bar, 6, nt_addr);
-}
-
-void update_hud(void) {
-    // NT0 ($2000)
-    update_hud_meter(stat_hunger, 0x2048);
-    update_hud_meter(stat_energy, 0x2056);
-    update_hud_meter(stat_happy,  0x2068);
-
-    // NT1 ($2400)
-    update_hud_meter(stat_hunger, 0x2448);
-    update_hud_meter(stat_energy, 0x2456);
-    update_hud_meter(stat_happy,  0x2468);
-}
+#define BOWL_X_MIN       32
+#define BOWL_X_MAX       64
 
 void init_game(void) {
     dog_x = 32;
@@ -254,6 +245,11 @@ void init_game(void) {
     item1_x = 180; item1_y = 100; item1_active = 1;
     item2_x = 420; item2_y = 100; item2_active = 1;
     ball_x  = 300; ball_y  = GROUND_Y + 8; ball_vx = 0;
+
+    ball_cd = 0;
+    eat_timer = 0;
+    worked_flag = 0;
+    hud_invalidate();   // force the NMI HUD painter to repaint all meters
 }
 
 // ------------------------------------------------------------------------------
@@ -303,6 +299,11 @@ void main(void) {
                 if ((need_timer & 0x0F) == 0 && stat_energy < 100) {
                     stat_energy++;
                 }
+                // Fully rested: wake up on the dog's own
+                if (stat_energy >= 100) {
+                    game_mode = MODE_PLAY;
+                    sfx_play(SFX_BARK);
+                }
             }
         } else {
             // Normal Playing Mode
@@ -315,16 +316,31 @@ void main(void) {
             }
             if (bark_timer > 0) bark_timer--;
 
-            // --- DOWN BUTTON (SLEEP IN BUDA) ---
-            if ((pad_trig & PAD_DOWN) && dog_x >= 16 && dog_x <= 60) {
+            // --- DOWN BUTTON (SLEEP IN BUDA, must be grounded) ---
+            if ((pad_trig & PAD_DOWN) && dog_on_ground && dog_x >= 16 && dog_x <= 60) {
                 game_mode = MODE_SLEEP;
                 sfx_play(SFX_JUMP);
             }
+
+            // --- UP BUTTON AT BOWL (EAT: refills hunger) ---
+            if ((pad & PAD_UP) && dog_on_ground &&
+                dog_x >= BOWL_X_MIN && dog_x <= BOWL_X_MAX) {
+                if (stat_hunger < 100) {
+                    stat_hunger += 6;
+                    if (stat_hunger > 100) stat_hunger = 100;
+                    if (eat_timer == 0) {
+                        sfx_play(SFX_EAT);
+                        eat_timer = 32;
+                    }
+                }
+            }
+            if (eat_timer > 0) eat_timer--;
 
             // --- A BUTTON (JUMP) ---
             if ((pad_trig & PAD_A) && dog_on_ground) {
                 dog_vy = JUMP_VELOCITY;
                 dog_on_ground = 0;
+                worked_flag = 1;
                 sfx_play(SFX_JUMP);
             }
 
@@ -333,12 +349,14 @@ void main(void) {
                 dog_dir = 1;
                 dog_x -= RUN_SPEED;
                 if (dog_x < 16) dog_x = 16;
+                worked_flag = 1;
                 dog_anim_timer++;
                 dog_anim_frame = ((dog_anim_timer >> 3) & 1) + 1;
             } else if (pad & PAD_RIGHT) {
                 dog_dir = 0;
                 dog_x += RUN_SPEED;
                 if (dog_x > 980) dog_x = 980;
+                worked_flag = 1;
                 dog_anim_timer++;
                 dog_anim_frame = ((dog_anim_timer >> 3) & 1) + 1;
             } else {
@@ -372,12 +390,15 @@ void main(void) {
                 sfx_play(SFX_EAT);
             }
 
-            // --- TOY BALL PHYSICS ---
-            if (dog_x >= ball_x - 16 && dog_x <= ball_x + 16 &&
+            // --- TOY BALL PHYSICS (30-frame kick cooldown: no SFX spam,
+            //     no continuous push-walking the ball around) ---
+            if (ball_cd > 0) ball_cd--;
+            if (ball_cd == 0 && dog_x >= ball_x - 16 && dog_x <= ball_x + 16 &&
                 dog_y >= ball_y - 16 && dog_y <= ball_y + 16) {
                 ball_vx = (dog_dir == 0) ? 3 : -3;
                 sfx_play(SFX_JUMP);
                 if (stat_happy < 100) stat_happy++;
+                ball_cd = 30;
             }
             if (ball_vx != 0) {
                 ball_x += ball_vx;
@@ -393,9 +414,11 @@ void main(void) {
         if (need_timer >= 120) {
             need_timer = 0;
             if (stat_hunger > 0) stat_hunger--;
-            if (stat_energy > 0 && (pad & (PAD_LEFT | PAD_RIGHT | PAD_A))) stat_energy--;
+            // Energy drains if the dog did anything in this window (the old
+            // code only drained when a key was held on the exact boundary).
+            if (worked_flag && stat_energy > 0) stat_energy--;
+            worked_flag = 0;
             if (stat_hunger < 20 && stat_happy > 0) stat_happy--;
-            update_hud();
         }
 
         // --- CAMERA TRACKING & HARDWARE SCROLLING ---

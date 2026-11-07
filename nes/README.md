@@ -24,11 +24,11 @@ Oficjalny port gry **Dog Tamagotchi 2D Platformer** na konsolę **Nintendo Enter
    - Dymek szczekania (`HAU!`) oraz ikonka `Zzz` podczas snu.
 
 2. **Otoczenie i Platformy:**
-   - **Buda psa z czerwonym dachem i kocykiem:** Położona po lewej stronie planszy. Wciśnięcie `[DÓŁ]` przed wejściem układa pieska do snu.
+   - **Buda psa z czerwonym dachem i kocykiem:** Położona po lewej stronie planszy. Wciśnięcie `[DÓŁ]` przed wejściem (stojąc na ziemi) układa pieska do snu.
    - **Drewniane platformy:** Dwa poziomy podestów do zręcznościowego wskakiwania.
-   - **Miska z karmą:** Regeneruje głód psa do 100%.
+   - **Miska z karmą:** Stoi obok budy – przytrzymanie `[GÓRA]` w jej pobliżu regeneruje głód psa do 100%.
    - **Hydrant i Drzewo:** Ozdobne elementy parku i ogrodu.
-   - **Interaktywna Piłka (Toy Ball):** Piesek może trącać i toczyć piłkę łapkami po trawie, co zwiększa jego wskaźnik szczęścia.
+   - **Interaktywna Piłka (Toy Ball):** Piesek może trącać i toczyć piłkę łapkami po trawie, co zwiększa jego wskaźnik szczęścia (jeden kop – jedno szczeknięcie, kopywanie co pół sekundy).
 
 3. **Symulacja Potrzeb Tamagotchi (HUD w czasie rzeczywistym):**
    - **Głód (`HUNGER:`):** Wskaźnik serduszek [♥♥♥♥]. Spada z czasem, odnawiany przy misce z jedzeniem.
@@ -52,8 +52,12 @@ Oficjalny port gry **Dog Tamagotchi 2D Platformer** na konsolę **Nintendo Enter
 | **`D-Pad Lewo / Prawo`** | Bieg w lewo / w prawo (z animacją łapek) |
 | **`A`** | Skok na platformy i przeszkody |
 | **`B`** | Szczekanie (`HAU!`), płoszenie i radość |
-| **`DÓŁ` (przy budzie)** | **Wejście do budy i sen regeneracyjny 💤** |
+| **`GÓRA` (przy misce 🥣)** | **Jedzenie karmy – regeneracja głodu do 100%** |
+| **`DÓŁ` (przy budzie)** | **Wejście do budy i sen regeneracyjny 💤** (tylko na ziemi) |
 | **`A / B / START` (w trakcie snu)** | Pobudka z budy |
+
+> Miska z karmą (🥣) stoi tuż obok budy po lewej stronie pierwszej planszy.
+> Podejdź i **przytrzymaj `GÓRA`**, aż pasek `GLOD` osiągnie 100%.
 
 ---
 
@@ -69,10 +73,16 @@ make
 Polecenie automatycznie wygeneruje:
 * `graphics.chr` – 8 KB bank pamięci graficznej CHR z kafelkami tła, fontem i duszkami psa.
 * `dog_tamagotchi.nes` – gotowy plik ROM do uruchomienia na dowolnym emulatorze lub programatorze kasetowym (EverDrive N8).
+* `play.html` – *(cel `make web`, uruchamiany automatycznie)* strona WWW z wbudowanym ROM-em i emulatorze jsnes – zawsze świeża, nigdy nie wymaga serwera.
 
 Czyste przebudowanie:
 ```bash
 make clean && make
+```
+
+Testy regresji ROM-u (headless, jsnes + Node – patrz `tests/nes/README.md`):
+```bash
+cd ../tests/nes && npm install && npm run setup && npm test
 ```
 
 ---
@@ -83,3 +93,6 @@ Plik `nes/dog_tamagotchi.nes` jest w 100% zgodny ze standardem iNES Mapper 0. Mo
 * **macOS:** OpenEmu, Mesen, RetroArch, Nestopia, FCEUX
 * **Windows / Linux:** Mesen, FCEUX, RetroArch
 * **Prawdziwy NES / Famicom:** Flashcart EverDrive N8 / PowerPak
+* **Przeglądarka:** otwórz `play.html` (podwójne kliknięcie) – ROM jest wbudowany w stronę razem z emulatorem jsnes. Klawiatura: strzałki = D-Pad (trzymaj `GÓRA` przy misce!), `Spacja`/`Z` = A, `X`/`B` = B, `Shift` = Select, `Enter` = Start.
+
+Mapowanie klawiszy znajduje się w pliku `play.html`; zachowanie gry weryfikują testy regresji z `tests/nes/`.

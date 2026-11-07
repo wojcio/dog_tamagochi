@@ -47,6 +47,17 @@ init_tamagotchi:
     rts
 
 update_tamagotchi:
+    ; Throttle eating SFX repeat
+    lda eat_timer
+    beq @no_eat_tick
+    dec eat_timer
+@no_eat_tick:
+    ; Ball kick cooldown
+    lda toyball_cd
+    beq @no_ball_tick
+    dec toyball_cd
+@no_ball_tick:
+
     ; Check if sleeping
     lda game_mode
     cmp #MODE_SLEEP
@@ -55,7 +66,7 @@ update_tamagotchi:
     inc tamagotchi_tick
     lda tamagotchi_tick
     and #$03
-    bne @check_pickups
+    bne @sleep_done
 
     lda stat_energy
     cmp #100
@@ -63,9 +74,9 @@ update_tamagotchi:
     inc stat_energy
     lda stat_happy
     cmp #100
-    bcs @check_pickups
+    bcs @sleep_done
     inc stat_happy
-    jmp @check_pickups
+    jmp @sleep_done
 
 @fully_rested:
     lda #100
@@ -74,9 +85,41 @@ update_tamagotchi:
     sta game_mode
     lda #SFX_TRICK
     jsr play_sfx
+@sleep_done:
     jmp @check_pickups
 
 @normal_needs:
+    ; --- EAT AT THE BOWL (hold UP near the buda, screen 0; every frame) ---
+    lda gamepad_cur
+    and #BTN_UP
+    beq @needs_gate
+    lda dog_on_ground
+    beq @needs_gate
+    lda dog_x_hi              ; bowl lives in screen 0 (world x < 256)
+    bne @needs_gate
+    lda dog_x_lo
+    cmp #BOWL_X_MIN
+    bcc @needs_gate
+    cmp #BOWL_X_MAX
+    bcs @needs_gate
+    lda stat_hunger
+    cmp #100
+    bcs @needs_gate
+    clc
+    adc #6
+    cmp #100
+    bcc @bowl_fed
+    lda #100
+@bowl_fed:
+    sta stat_hunger
+    lda eat_timer
+    bne @needs_gate
+    lda #32
+    sta eat_timer
+    lda #SFX_EAT
+    jsr play_sfx
+
+@needs_gate:
     inc tamagotchi_tick
     lda tamagotchi_tick
     cmp #120
@@ -90,9 +133,12 @@ update_tamagotchi:
     dec stat_hunger
 
 @drain_energy:
-    lda gamepad_cur
-    and #(BTN_LEFT | BTN_RIGHT | BTN_A)
+    ; Drain only if the dog actually ran or jumped in this window
+    ; (the old check sampled keys exactly at the 120-tick boundary).
+    lda worked_flag
     beq @check_sad
+    lda #0
+    sta worked_flag
     lda stat_energy
     beq @check_sad
     dec stat_energy
@@ -186,7 +232,11 @@ update_tamagotchi:
     jsr play_sfx
 
 @check_ball:
-    ; --- TOY BALL (Beach) ---
+    ; --- TOY BALL (Beach; 30-frame kick cooldown stops SFX spam and
+    ;     push-walking the ball while standing on it) ---
+    lda toyball_cd
+    bne @ball_physics
+
     lda dog_x_hi
     cmp toyball_x_hi
     bne @ball_physics
@@ -210,6 +260,8 @@ update_tamagotchi:
     lda #3
     sta toyball_vx
 @ball_sfx:
+    lda #30
+    sta toyball_cd        ; one bark per kick (parity with Python fix)
     lda #SFX_JUMP
     jsr play_sfx
     lda stat_happy
@@ -333,147 +385,108 @@ render_item_sprites:
 ; Updates both NT0 ($2048..) and NT1 ($2448..) so HUD never flickers on scroll!
 ; ------------------------------------------------------------------------------
 update_hud_vram:
-    ; Precalculate bar values
+    ; --- GLOD Bar (row 2, col 8) in NT0 $2048 / NT1 $2448 ---
     lda stat_hunger
     jsr @calc_bar
     lda math_temp
-    sta hunger_bar_val
+    cmp hud_cache+0
+    beq @hud_ener
+    sta hud_cache+0
+    sta bar_fill
+    lda #$48
+    jsr @write_bar_both
 
+@hud_ener:
+    ; --- ENER Bar (row 2, col 23) ---
     lda stat_energy
     jsr @calc_bar
     lda math_temp
-    sta energy_bar_val
+    cmp hud_cache+1
+    beq @hud_szcz
+    sta hud_cache+1
+    sta bar_fill
+    lda #$57
+    jsr @write_bar_both
 
+@hud_szcz:
+    ; --- SZCZ Bar (row 3, col 8) ---
     lda stat_happy
     jsr @calc_bar
     lda math_temp
-    sta happy_bar_val
-
-    ; 1. Update GLOD Bar in NT0 ($2048)
-    lda PPUSTATUS
-    lda #$20
-    sta PPUADDR
-    lda #$48
-    sta PPUADDR
-    jsr @write_glod_bar
-
-    ; Update GLOD Bar in NT1 ($2448)
-    lda #$24
-    sta PPUADDR
-    lda #$48
-    sta PPUADDR
-    jsr @write_glod_bar
-
-    ; 2. Update ENER Bar in NT0 ($2057)
-    lda #$20
-    sta PPUADDR
-    lda #$57
-    sta PPUADDR
-    jsr @write_ener_bar
-
-    ; Update ENER Bar in NT1 ($2457)
-    lda #$24
-    sta PPUADDR
-    lda #$57
-    sta PPUADDR
-    jsr @write_ener_bar
-
-    ; 3. Update SZCZ Bar in NT0 ($2068)
-    lda #$20
-    sta PPUADDR
+    cmp hud_cache+2
+    beq @hud_bones
+    sta hud_cache+2
+    sta bar_fill
     lda #$68
-    sta PPUADDR
-    jsr @write_szcz_bar
+    jsr @write_bar_both
 
-    ; Update SZCZ Bar in NT1 ($2468)
-    lda #$24
-    sta PPUADDR
-    lda #$68
-    sta PPUADDR
-    jsr @write_szcz_bar
-
-    ; 4. Update KOSCI Digits in NT0 ($2078)
-    lda #$20
-    sta PPUADDR
-    lda #$78
-    sta PPUADDR
-    jsr @write_bones_digits
-
-    ; Update KOSCI Digits in NT1 ($2478)
-    lda #$24
-    sta PPUADDR
-    lda #$78
-    sta PPUADDR
-    jsr @write_bones_digits
-    rts
-
-@write_glod_bar:
-    lda hunger_bar_val
-    sta math_temp
-    ldx #6
-:   lda math_temp
-    beq @g_emp
-    dec math_temp
-    lda #$80            ; █
-    jmp :+
-@g_emp:
-    lda #$81            ; ░
-:   sta PPUDATA
-    dex
-    bne :--
-    rts
-
-@write_ener_bar:
-    lda energy_bar_val
-    sta math_temp
-    ldx #6
-:   lda math_temp
-    beq @e_emp
-    dec math_temp
-    lda #$80
-    jmp :+
-@e_emp:
-    lda #$81
-:   sta PPUDATA
-    dex
-    bne :--
-    rts
-
-@write_szcz_bar:
-    lda happy_bar_val
-    sta math_temp
-    ldx #6
-:   lda math_temp
-    beq @s_emp
-    dec math_temp
-    lda #$80
-    jmp :+
-@s_emp:
-    lda #$81
-:   sta PPUDATA
-    dex
-    bne :--
-    rts
-
-@write_bones_digits:
+@hud_bones:
+    ; --- KOSCI digits (row 3, col 24) ---
     lda stat_bones
-    ldx #0
-@div10:
-    cmp #10
-    bcc @tens_done
+    cmp hud_cache+3
+    beq @hud_done
+    sta hud_cache+3
+    ldx #$FF                ; divide by 10: X = tens, A = ones
     sec
-    sbc #10
+@div10:
     inx
-    jmp @div10
-@tens_done:
-    pha
+    sbc #10
+    bcs @div10
+    adc #10                 ; restore remainder
+    clc
+    adc #$30
+    sta energy_bar_val      ; ones digit tile (ZP reused as scratch)
     txa
     clc
     adc #$30
+    sta hunger_bar_val      ; tens digit tile (ZP reused as scratch)
+
+    lda #$20
+    sta PPUADDR
+    lda #$78
+    sta PPUADDR
+    lda hunger_bar_val
     sta PPUDATA
-    pla
-    clc
-    adc #$30
+    lda energy_bar_val
+    sta PPUDATA
+    lda #$24
+    sta PPUADDR
+    lda #$78
+    sta PPUADDR
+    lda hunger_bar_val
+    sta PPUDATA
+    lda energy_bar_val
+    sta PPUDATA
+@hud_done:
+    rts
+
+; Writes one 7-tile bar (6 cells + ']' bracket) into both nametables.
+; In: A = nametable column offset of first cell; bar_fill = 0..6.
+@write_bar_both:
+    sta math_temp
+    lda #$20
+    jsr @write_bar_nt
+    lda #$24
+@write_bar_nt:
+    sta PPUADDR
+    lda math_temp
+    sta PPUADDR
+    ldx #0
+@cell:
+    txa
+    cmp bar_fill
+    bcs @cell_empty
+    lda #$80                ; █
+    sta PPUDATA
+    jmp @cell_next
+@cell_empty:
+    lda #$81                ; ░
+    sta PPUDATA
+@cell_next:
+    inx
+    cpx #6
+    bne @cell
+    lda #$5D                ; ']' (the old code clobbered this with ░)
     sta PPUDATA
     rts
 

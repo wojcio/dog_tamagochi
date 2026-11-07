@@ -1,0 +1,42 @@
+# ==============================================================================
+# 🐕 DOG TAMAGOTCHI 2D PLATFORMER - PYTHON PACKAGE
+# pip install -e .   ->  installs editable, adds the `piesek` command
+# (nes/ and nes2/ are separate cc65 projects and are intentionally not packaged)
+# ==============================================================================
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dog-tamagotchi"
+version = "1.0.0"
+description = "🐕 Dog Tamagotchi 2D Platformer - terminalowy symulator wirtualnego psa (ASCII art, polski UI)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Wojciech Nowacki" }]
+keywords = ["tamagotchi", "terminal", "ascii-art", "game", "platformer", "virtual-pet"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Games/Entertainment",
+]
+# Czysta biblioteka standardowa: termios/select/curses-free ANSI, unicodedata.
+dependencies = []
+
+[project.scripts]
+# Piesek! Uruchamia pełną grę (main.main()). Wymaga terminala un*x-owego.
+piesek = "main:main"
+
+[project.urls]
+Homepage = "https://github.com/wojcio/dog-tamagotchi"
+
+[tool.setuptools]
+# Pakietujemy wyłącznie grę w Pythonie; katalogi nes/ i nes2/ to projekty
+# cc65 (build przez make), a tests/ to testy uruchamiane skryptowo.
+packages = ["game"]
+py-modules = ["main"]

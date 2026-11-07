@@ -2,16 +2,19 @@
 Dog entity with multiple breeds, multi-line colored ASCII sprites, physics and Tamagotchi needs.
 """
 
+import random
+
 from game.engine import Colors
 from game.audio import audio
 
 class DogBreed:
-    def __init__(self, name, description, color, fur_color, secondary_color):
+    def __init__(self, name, description, color, fur_color, secondary_color, width=6):
         self.name = name
         self.description = description
         self.color = color
         self.fur = fur_color
         self.secondary = secondary_color
+        self.width = width  # collision/sprite width in terminal cells
 
 BREEDS = {
     "corgi": DogBreed(
@@ -26,14 +29,16 @@ BREEDS = {
         "Długi jak paróweczka, sprytny i czujny tropiciel!",
         Colors.BROWN,
         Colors.BROWN,
-        Colors.LIGHT_BROWN
+        Colors.LIGHT_BROWN,
+        width=8
     ),
     "setter": DogBreed(
         "Seter Irlandzki",
         "Dostojny arystokrata o mahoniowej sierści i wdzięku!",
         Colors.fg256(166),
         Colors.fg256(166),
-        Colors.fg256(208)
+        Colors.fg256(208),
+        width=7
     ),
     "shiba": DogBreed(
         "Shiba Inu (Pieseł)",
@@ -68,9 +73,10 @@ SHOP_ITEMS = {
 }
 
 class Dog:
-    def __init__(self, breed_key="corgi", x=10.0, y=18.0):
+    def __init__(self, breed_key="corgi", x=10.0, y=18.0, name=""):
         self.breed_key = breed_key
         self.breed = BREEDS.get(breed_key, BREEDS["corgi"])
+        self.name = name or ""  # player-given name (empty until adopted/named)
         self.x = float(x)
         self.y = float(y)
         self.vx = 0.0
@@ -80,8 +86,8 @@ class Dog:
         self.state_timer = 0
         self.on_ground = True
         
-        # Dimensions
-        self.width = 6
+        # Dimensions (collision box; sprite may extend a bit past it)
+        self.width = self.breed.width
         self.height = 3
 
         # Tamagotchi stats (0 to 100)
@@ -100,6 +106,7 @@ class Dog:
         # Counters & Achievements
         self.bones_eaten = 0
         self.times_petted = 0
+        self.ball_fetches = 0
         self.peeled_spots = 0
         self.tricks_performed = 0
         self.walk_distance = 0.0
@@ -229,9 +236,18 @@ class Dog:
             else:
                 self.state = "idle"
 
+    def wake_up(self):
+        """Wake the dog from sleep. Safe to call when not sleeping."""
+        if self.state == "sleep":
+            self.state = "idle"
+            self.state_timer = 0
+            self.say("*ziewa* Dzień dobry! ☀️", Colors.BRIGHT_YELLOW, 25)
+            audio.play('menu_select')
+
     def move_left(self):
-        if self.state in ["pee", "sleep"]:
+        if self.state == "pee":
             return
+        self.wake_up()
         speed = 0.85 if self.energy > 20 else 0.5
         self.vx = -speed
         self.facing = "left"
@@ -239,8 +255,9 @@ class Dog:
         self.energy = max(0.0, self.energy - 0.03)
 
     def move_right(self):
-        if self.state in ["pee", "sleep"]:
+        if self.state == "pee":
             return
+        self.wake_up()
         speed = 0.85 if self.energy > 20 else 0.5
         self.vx = speed
         self.facing = "right"
@@ -248,6 +265,8 @@ class Dog:
         self.energy = max(0.0, self.energy - 0.03)
 
     def jump(self):
+        if self.state == "sleep":
+            self.wake_up()
         if self.on_ground and self.state not in ["pee", "sleep"]:
             jump_power = -2.2 if self.energy > 15 else -1.75
             self.vy = jump_power
@@ -266,7 +285,6 @@ class Dog:
         self.state_timer = 12
         self.bark_active_ticks = 15
         barks = ["HAU! HAU!", "WOF!", "HAUUU~!", "AWOOO! 🐺", "HAU! 🐾"]
-        import random
         self.say(random.choice(barks), Colors.BRIGHT_YELLOW, 20)
         audio.play('bark')
         self.happiness = min(100.0, self.happiness + 1.0)
@@ -286,11 +304,7 @@ class Dog:
 
     def sleep(self):
         if self.state == "sleep":
-            # Wake up
-            self.state = "idle"
-            self.state_timer = 0
-            self.say("*ziewa* Dzień dobry! ☀️", Colors.BRIGHT_YELLOW, 25)
-            audio.play('menu_select')
+            self.wake_up()
         else:
             # Check proximity to doghouse (x: 3 - 17)
             if 3.0 <= self.x <= 17.0:
@@ -321,7 +335,6 @@ class Dog:
         self.times_petted += 1
         self.add_xp(20.0)
         pet_reactions = ["*macha ogonkiem* ♥", "Uwielbiam głaski! ♥", "Aww! <3", "Merd! Merd! ♥"]
-        import random
         self.say(random.choice(pet_reactions), Colors.PINK, 25)
         audio.play('pet')
 
@@ -471,7 +484,6 @@ class Dog:
                 ]
 
         elif self.breed_key == "dachshund": # Jamnik - Długi piesek!
-            self.width = 8
             if self.state == "sleep":
                 return [
                     [(' ', fur), (' ', fur), (' ', fur), (' ', fur), (' ', fur), ('z', Colors.CYAN), ('Z', Colors.CYAN), (' ', fur)],

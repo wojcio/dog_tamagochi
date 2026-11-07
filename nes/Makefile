@@ -16,7 +16,7 @@ INCLUDES = constants.inc input.s apu.s ppu.s world.s dog.s tamagotchi.s
 CHR = graphics.chr
 WORLD_DATA = screen_0.bin screen_1.bin world_cols.bin
 
-all: $(TARGET)
+all: $(TARGET) web
 
 $(CHR): tools/make_chr.py
 	$(PYTHON) tools/make_chr.py $(CHR)
@@ -36,7 +36,11 @@ $(TARGET): $(CFG) header.o main.o
 	@echo "🎮 SUCCESS: Built $(TARGET) for Nintendo NES!"
 	@echo "========================================================="
 
+# Refresh the base64 ROM embedded in the browser page so play.html never rots
+web: $(TARGET)
+	$(PYTHON) tools/embed_rom.py $(TARGET) play.html
+
 clean:
 	rm -f $(OBJECTS) $(TARGET) $(CHR) $(WORLD_DATA)
 
-.PHONY: all clean
+.PHONY: all clean web

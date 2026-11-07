@@ -12,10 +12,23 @@ from game.engine import Terminal, Colors
 from game.dog import Dog, BREEDS, TRICKS, SHOP_ITEMS
 from game.world import World
 from game.npc import HumanNPC, Pigeon, Cat, Crab
-from game.ui import Renderer, draw_breed_selection_menu
+from game.ui import (Renderer, draw_breed_selection_menu, draw_start_menu,
+                     draw_name_input)
 from game.audio import audio
+from game import save as SaveSystem
+from game import quests as QuestSystem
+
+_ACTIVE_GAME = None  # (dog, world, meta) for crash/Ctrl+C save
+
 
 def handle_exit(signum, frame):
+    # Persist the dog mid-game before quitting on Ctrl+C / SIGTERM.
+    try:
+        if _ACTIVE_GAME is not None:
+            SaveSystem.save_game(_ACTIVE_GAME["dog"], _ACTIVE_GAME["world"],
+                                 _ACTIVE_GAME["meta"], _ACTIVE_GAME.get("quests"))
+    except Exception:
+        pass
     try:
         audio.cleanup()
     except Exception:
@@ -27,14 +40,53 @@ def handle_exit(signum, frame):
 signal.signal(signal.SIGINT, handle_exit)
 signal.signal(signal.SIGTERM, handle_exit)
 
-def run_game(breed_key="corgi", terminal=None):
+
+def run_game(breed_key="corgi", terminal=None, resume=False, name="", meta=None):
+    global _ACTIVE_GAME
     if terminal is None:
         terminal = Terminal(width=105, height=28)
         terminal.enter_fullscreen()
 
     world = World(width=420, height=22)
-    dog = Dog(breed_key=breed_key, x=10.0, y=16.0)
     renderer = Renderer(terminal)
+
+    greeting = None
+    quests_state = None
+    if resume:
+        raw = SaveSystem.load_raw()
+        if raw:
+            bk = raw.get("dog", {}).get("breed_key", breed_key)
+            dog = Dog(breed_key=bk if bk in BREEDS else "corgi", x=10.0, y=16.0)
+            SaveSystem.apply_to_dog(raw, dog)
+            SaveSystem.apply_to_world(raw, world)
+            meta = raw.get("meta", {"created_at": time.time()})
+            dog.name = meta.get("name", "") or ""
+            quests_state = QuestSystem.sanitize(raw.get("quests"))
+            greeting, days = SaveSystem.apply_offline_decay(
+                dog, raw.get("saved_at", time.time()), meta)
+            dog.days_together = days
+        else:
+            resume = False  # save vanished; fall through to a fresh game
+
+    if not resume:
+        dog = Dog(breed_key=breed_key, x=10.0, y=16.0, name=name)
+        if meta is None:
+            meta = SaveSystem.new_meta(dog.name)
+        dog.days_together = SaveSystem.days_together(meta)
+
+    # Daily quests: keep today's set, roll a fresh batch when the day changed.
+    quests_state, quests_rolled = QuestSystem.ensure_today(
+        quests_state, QuestSystem.today_str(), dog)
+
+    _ACTIVE_GAME = {"dog": dog, "world": world, "meta": meta, "quests": quests_state}
+    last_autosave = time.time()
+
+    if greeting:
+        dog.say(greeting, Colors.PINK + Colors.BOLD, 150)
+    elif quests_rolled:
+        dog.say("Nowe zadania na dziś! Wciśnij [R] 📋", Colors.GOLD + Colors.BOLD, 110)
+    else:
+        dog.say(f"Cześć! Jestem {dog.breed.name}! 🐾", Colors.BRIGHT_GREEN + Colors.BOLD, 90)
 
     # Spawn Diverse NPCs across the 4 Biomes
     npcs = [
@@ -71,6 +123,11 @@ def run_game(breed_key="corgi", terminal=None):
     modal_state = None # None, 'tricks', 'shop'
     shop_selected_idx = 0
     shop_item_keys = list(SHOP_ITEMS.keys())
+
+    # Held-key movement: keep walking smoothly between OS key-repeat events.
+    held_dir = 0        # -1 left, +1 right, 0 none
+    held_key_time = 0.0
+    HOLD_GRACE = 0.14   # seconds a direction stays active after its last event
 
     while running:
         frame_start = time.time()
@@ -127,6 +184,14 @@ def run_game(breed_key="corgi", terminal=None):
                         shop_selected_idx = 0
                         audio.play('menu_select')
 
+                # Modal: Daily Quest Log
+                elif k == 'r':
+                    if modal_state == "quests":
+                        modal_state = None
+                    else:
+                        modal_state = "quests"
+                        audio.play('menu_select')
+
                 # Shop Navigation
                 elif modal_state == "shop":
                     if k in ['UP', 'w']:
@@ -169,9 +234,11 @@ def run_game(breed_key="corgi", terminal=None):
                 # In-Game Movement & Actions
                 elif not paused and modal_state is None:
                     if k in ['LEFT', 'a']:
-                        dog.move_left()
+                        held_dir = -1
+                        held_key_time = frame_start
                     elif k in ['RIGHT', 'd']:
-                        dog.move_right()
+                        held_dir = 1
+                        held_key_time = frame_start
                     elif k in ['UP', 'w']:
                         dog.jump()
                     elif k in ['SPACE', 'b', 'h']:
@@ -193,6 +260,16 @@ def run_game(breed_key="corgi", terminal=None):
                         marked_prop = world.check_mark_prop(dog)
                         if marked_prop:
                             dog.say("Zaznaczono terytorium! 💦✓", Colors.BRIGHT_CYAN, 25)
+
+        # Apply continuous movement while a direction is held (fills key-repeat gaps).
+        if not paused and modal_state is None and held_dir != 0:
+            if time.time() - held_key_time <= HOLD_GRACE:
+                if held_dir < 0:
+                    dog.move_left()
+                else:
+                    dog.move_right()
+            else:
+                held_dir = 0
 
         if not paused:
             # Physics & world updates
@@ -216,18 +293,130 @@ def run_game(breed_key="corgi", terminal=None):
             for cr in crabs:
                 cr.update(dog)
 
+        # Daily quest progress & rollover (only while the world simulates).
+        if not paused:
+            if clock_tick % 300 == 0:  # ~every 10s: did the calendar day flip?
+                day = QuestSystem.today_str()
+                if day != quests_state["date"]:
+                    quests_state, _ = QuestSystem.ensure_today(quests_state, day, dog)
+                    _ACTIVE_GAME["quests"] = quests_state
+                    dog.say("Nowy dzień — nowe zadania! [R] 📋", Colors.GOLD + Colors.BOLD, 120)
+            for ev in QuestSystem.check_completions(quests_state, dog):
+                audio.play('level_up')
+                dog.say(f"ZADANIE UKOŃCZONE! +{ev['bones']}🦴 +{ev['xp']}XP 🎉",
+                        Colors.BRIGHT_GREEN + Colors.BOLD, 110)
+
         # Render frame
         renderer.render_world_and_hud(
             world, dog, npcs, pigeons, cats, crabs,
             modal_state=modal_state,
-            modal_data=shop_selected_idx if modal_state == "shop" else None
+            modal_data=(shop_selected_idx if modal_state == "shop"
+                        else quests_state if modal_state == "quests" else None),
+            quests=quests_state
         )
         terminal.render()
+
+        # Autosave every ~30s so a crash loses little progress.
+        now = time.time()
+        if now - last_autosave > 30.0:
+            dog.days_together = SaveSystem.days_together(meta)
+            try:
+                SaveSystem.save_game(dog, world, meta, quests_state)
+                last_autosave = now
+            except Exception:
+                pass
 
         # Target ~30 FPS
         elapsed = time.time() - frame_start
         sleep_time = max(0.001, (1.0 / 30.0) - elapsed)
         time.sleep(sleep_time)
+
+    # Normal exit (ESC): persist the dog's state.
+    try:
+        dog.days_together = SaveSystem.days_together(meta)
+        SaveSystem.save_game(dog, world, meta, quests_state)
+    except Exception:
+        pass
+    _ACTIVE_GAME = None
+
+
+DEFAULT_NAMES = {
+    "corgi": "Kora", "dachshund": "Parówka", "setter": "Dżek",
+    "shiba": "Hachi", "poodle": "Fafik",
+}
+
+
+def save_info_from(raw):
+    """Build a display dict for the start menu from a raw save."""
+    d = raw.get("dog", {})
+    meta = raw.get("meta", {})
+    breed = BREEDS.get(d.get("breed_key", "corgi"), BREEDS["corgi"])
+    return {
+        "name": meta.get("name") or "",
+        "breed_name": breed.name,
+        "level": int(d.get("level", 1) or 1),
+        "days": SaveSystem.days_together(meta),
+        "bones": int(d.get("bones_currency", 0) or 0),
+    }
+
+
+def start_menu(terminal, save_info):
+    """Resume / New menu. Returns 'continue', 'new' or 'quit'."""
+    sel = 0
+    while True:
+        draw_start_menu(terminal, save_info, sel)
+        terminal.render()
+        for k in terminal.get_input():
+            if k in ['UP', 'DOWN', 'w', 's']:
+                sel = 1 - sel
+                audio.play('menu_move')
+            elif k in ['ENTER', 'SPACE']:
+                audio.play('menu_select')
+                return 'continue' if sel == 0 else 'new'
+            elif k in ['q', 'CTRL_C', 'ESC']:
+                return 'quit'
+        time.sleep(0.03)
+
+
+def choose_breed(terminal):
+    """Breed picker. Returns a breed_key, or None to quit."""
+    keys = list(BREEDS.keys())
+    idx = 0
+    while True:
+        draw_breed_selection_menu(terminal, idx)
+        terminal.render()
+        for k in terminal.get_input():
+            if k in ['q', 'CTRL_C', 'ESC']:
+                return None
+            elif k in ['LEFT', 'a']:
+                idx = (idx - 1) % len(keys); audio.play('menu_move')
+            elif k in ['RIGHT', 'd']:
+                idx = (idx + 1) % len(keys); audio.play('menu_move')
+            elif k in ['ENTER', 'SPACE']:
+                audio.play('menu_select'); time.sleep(0.15)
+                return keys[idx]
+        time.sleep(0.03)
+
+
+def enter_name(terminal, breed):
+    """Name-entry loop. Returns the typed (capitalized) name or '' for default."""
+    buf = ""
+    while True:
+        draw_name_input(terminal, buf, breed)
+        terminal.render()
+        for k in terminal.get_input():
+            if k == 'ENTER':
+                audio.play('menu_select')
+                name = buf.strip()
+                return (name[:1].upper() + name[1:]) if name else ""
+            elif k == 'ESC':
+                return ""
+            elif k in ('\x7f', '\b', 'BACKSPACE'):
+                buf = buf[:-1]; audio.play('menu_move')
+            elif len(k) == 1 and k.isprintable() and len(buf) < 14:
+                if k not in (' ',):
+                    buf += k; audio.play('menu_move')
+        time.sleep(0.03)
 
 
 def main():
@@ -235,33 +424,28 @@ def main():
     terminal.enter_fullscreen()
 
     try:
-        breed_keys = list(BREEDS.keys())
-        selected_idx = 0
-        in_menu = True
+        while True:
+            raw = SaveSystem.load_raw() if SaveSystem.exists() else None
 
-        while in_menu:
-            draw_breed_selection_menu(terminal, selected_idx)
-            terminal.render()
+            if raw is not None:
+                choice = start_menu(terminal, save_info_from(raw))
+                if choice == 'quit':
+                    break
+                if choice == 'continue':
+                    run_game(terminal=terminal, resume=True)
+                    continue  # back to the start menu (save now exists)
+                # choice == 'new' -> fall through to adoption flow
 
-            keys = terminal.get_input()
-            if keys:
-                for k in keys:
-                    if k in ['q', 'CTRL_C', 'ESC']:
-                        in_menu = False
-                        break
-                    elif k in ['LEFT', 'a']:
-                        selected_idx = (selected_idx - 1) % len(breed_keys)
-                        audio.play('menu_move')
-                    elif k in ['RIGHT', 'd']:
-                        selected_idx = (selected_idx + 1) % len(breed_keys)
-                        audio.play('menu_move')
-                    elif k in ['ENTER', 'SPACE']:
-                        audio.play('menu_select')
-                        time.sleep(0.15)
-                        chosen_breed = breed_keys[selected_idx]
-                        run_game(chosen_breed, terminal)
-            
-            time.sleep(0.03)
+            breed_key = choose_breed(terminal)
+            if breed_key is None:
+                break  # user quit from breed selection
+
+            name = enter_name(terminal, BREEDS[breed_key])
+            if not name:
+                name = DEFAULT_NAMES.get(breed_key, "Piesek")
+
+            run_game(breed_key=breed_key, terminal=terminal, resume=False, name=name)
+            # loop back: a save now exists, so the start menu is shown next
 
     except KeyboardInterrupt:
         pass

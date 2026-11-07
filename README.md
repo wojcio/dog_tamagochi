@@ -32,6 +32,33 @@ tech_stack:
 
 ---
 
+## 🚀 Instalacja i Uruchomienie
+
+Wymagania: **Python 3.9+**, terminal un*x-owy (macOS / Linux), terminal ≥ 100×24.
+Zapisy trafiają do `~/.dog_tamagotchi/save.json`.
+
+```bash
+# Opcja 1 (rekomendowana): instalacja pakietu z komendą `piesek`
+pip install -e .
+piesek
+
+# Opcja 2: bez instalacji, prosto z repozytorium
+python3 main.py
+```
+
+Tryb developerski (`pip install -e .`) linkuje kod z repozytorium – zmiany w
+plikach są widoczne natychmiast, bez reinstalacji. Pakiet instaluje wyłącznie
+grę pythonową (`game/` + `main.py`); katalogi `nes/` i `nes2/` to osobne
+projekty cc65 budowane przez `make` (szczegóły w ich README).
+
+Testy:
+```bash
+python3 tests/test_render_diff.py        # silnik renderowania (emulator VT)
+cd tests/nes && npm install && npm run setup && npm test   # ROM-y NES (jsnes)
+```
+
+---
+
 ## 🛏️ Mechanika Snu i Regeneracji w Budzie `[Z] / [Q]`
 
 > [!tip] Jak Odnowić Energię i Usunąć Zmęczenie:
