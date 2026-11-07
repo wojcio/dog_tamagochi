@@ -110,8 +110,17 @@ class Dog:
         self.peeled_spots = 0
         self.tricks_performed = 0
         self.walk_distance = 0.0
+        self.squirrels_chased = 0   # squirrels scattered by barks (Las / Ulica)
+        self.swims = 0              # river entries (Rzeka)
+        self.crossings_safe = 0     # zebra crossings completed car-free (Ulica)
+        self.dog_plays = 0          # play sessions with dog friends (Psi Park)
         self.bark_active_ticks = 0
         self.speech_bubble = None # (text, color, ticks_remaining)
+
+        # Swimming & street-traffic state
+        self.swimming = False
+        self.wet_timer = 0     # dripping-wet frames after leaving water
+        self.car_grace = 0     # invulnerable frames after a car scare
 
         self.anim_tick = 0
 
@@ -186,28 +195,57 @@ class Dog:
         # Vertical movement & robust one-way platform collision
         old_bottom = self.y + self.height
         new_bottom = old_bottom + self.vy
-        
-        landed_plat_y = None
-        # Land on platforms only when descending
-        if self.vy >= 0:
-            for plat in world.platforms:
-                if (self.x + self.width - 0.5 > plat.x) and (self.x + 0.5 < plat.x + plat.width):
-                    if old_bottom <= plat.y + 1.3 and new_bottom >= plat.y - 0.2:
-                        if landed_plat_y is None or plat.y < landed_plat_y:
-                            landed_plat_y = float(plat.y)
 
-        effective_ground = landed_plat_y if landed_plat_y is not None else float(world.ground_base_y)
-        
-        if new_bottom >= effective_ground:
-            self.y = effective_ground - self.height
-            self.vy = 0
-            self.on_ground = True
-        else:
-            self.y += self.vy
-            self.on_ground = False
+        # --- River swimming: buoyant surface state over open water ---
+        near_surface = (self.y + self.height) >= world.ground_base_y - 1
+        in_water = world.is_water(self.x + self.width / 2) and near_surface
+        if in_water and not self.swimming:
+            self.swimming = True
+            self.swims += 1
+            self.wet_timer = 70
+            audio.play('splash')
+            self.say("*CHLUP!* Pływamy! 🌊", Colors.BRIGHT_CYAN + Colors.BOLD, 30)
+        elif self.swimming and not in_water:
+            # Reached a bank: hop out dripping wet, physics resumes normally.
+            self.swimming = False
+            self.wet_timer = 70
+            audio.play('splash')
+            self.say("*potrząsa futrem* 💦 Brrr!", Colors.BRIGHT_CYAN, 25)
+
+        if not self.swimming:
+            landed_plat_y = None
+            landing_plat = None
+            # Land on platforms only when descending
+            if self.vy >= 0:
+                for plat in world.platforms:
+                    if (self.x + self.width - 0.5 > plat.x) and (self.x + 0.5 < plat.x + plat.width):
+                        if old_bottom <= plat.y + 1.3 and new_bottom >= plat.y - 0.2:
+                            if landed_plat_y is None or plat.y < landed_plat_y:
+                                landed_plat_y = float(plat.y)
+                                landing_plat = plat
+
+            effective_ground = landed_plat_y if landed_plat_y is not None else float(world.ground_base_y)
             
+            if new_bottom >= effective_ground:
+                self.y = effective_ground - self.height
+                self.vy = 0
+                self.on_ground = True
+            else:
+                self.y += self.vy
+                self.on_ground = False
+
+            # Ride drifting platforms (river log raft)
+            if landing_plat is not None and getattr(landing_plat, "dx", 0.0) != 0.0 and self.on_ground:
+                self.x = max(1.0, min(self.x + landing_plat.dx, world.width - self.width - 1))
+        else:
+            # Swimming: locked to the water surface, gentle drag
+            self.vy = 0
+            self.y = world.ground_base_y - self.height + 1
+            self.on_ground = True
+            self.vx *= 0.78
+
         # Friction
-        if self.on_ground:
+        if self.on_ground and not self.swimming:
             self.vx *= 0.65
             if abs(self.vx) < 0.05:
                 self.vx = 0
@@ -221,6 +259,11 @@ class Dog:
         if self.bark_active_ticks > 0:
             self.bark_active_ticks -= 1
 
+        if self.wet_timer > 0:
+            self.wet_timer -= 1
+        if self.car_grace > 0:
+            self.car_grace -= 1
+
         if self.speech_bubble:
             txt, col, left = self.speech_bubble
             if left > 1:
@@ -229,7 +272,9 @@ class Dog:
                 self.speech_bubble = None
 
         if self.state not in ["bark", "pet", "pee", "sleep", "eat"]:
-            if not self.on_ground:
+            if self.swimming:
+                self.state = "swim"
+            elif not self.on_ground:
                 self.state = "jump"
             elif abs(self.vx) > 0.1:
                 self.state = "walk"
@@ -249,24 +294,35 @@ class Dog:
             return
         self.wake_up()
         speed = 0.85 if self.energy > 20 else 0.5
+        if self.swimming:
+            speed *= 0.6  # paddling is slower work
         self.vx = -speed
         self.facing = "left"
         self.walk_distance += 0.2
-        self.energy = max(0.0, self.energy - 0.03)
+        self.energy = max(0.0, self.energy - (0.02 if self.swimming else 0.03))
 
     def move_right(self):
         if self.state == "pee":
             return
         self.wake_up()
         speed = 0.85 if self.energy > 20 else 0.5
+        if self.swimming:
+            speed *= 0.6
         self.vx = speed
         self.facing = "right"
         self.walk_distance += 0.2
-        self.energy = max(0.0, self.energy - 0.03)
+        self.energy = max(0.0, self.energy - (0.02 if self.swimming else 0.03))
 
     def jump(self):
         if self.state == "sleep":
             self.wake_up()
+        if self.swimming:
+            # No jumping off water: paddle instead, it's good fun though!
+            if self.anim_tick % 6 == 0:
+                audio.play('splash')
+                self.happiness = min(100.0, self.happiness + 0.4)
+                self.say("Plusk plusk! 🏊", Colors.BRIGHT_CYAN, 15)
+            return
         if self.on_ground and self.state not in ["pee", "sleep"]:
             jump_power = -2.2 if self.energy > 15 else -1.75
             self.vy = jump_power
@@ -405,6 +461,14 @@ class Dog:
         
         walk_leg = (self.anim_tick // 4) % 2
         tail_wag = (self.anim_tick // 3) % 2
+
+        # Swimming: head and back above the surface, paws paddling under
+        if self.state == "swim":
+            wave1, wave2 = ('≈', '~') if (self.anim_tick // 4) % 2 == 0 else ('~', '≈')
+            return [
+                [('(', fur), ('•', c_eye), ('ω', fur), ('•', c_eye), (')', fur), ('~', c_wet)],
+                [(wave1, c_wet), (wave2, c_wet), ('_', sec), (wave1, c_wet), (wave2, c_wet), ('≈', c_wet)],
+            ]
 
         # Universal trick animations
         if self.state == "sit":

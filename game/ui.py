@@ -8,6 +8,7 @@ import time
 
 from game.engine import Colors, str_width
 from game.dog import BREEDS, TRICKS, SHOP_ITEMS
+from game.world import zone_at, PARK_STREAM_MIN, PARK_STREAM_MAX, ZEBRA_MIN, ZEBRA_MAX
 from game.audio import audio
 from game import quests as QuestSystem
 
@@ -55,7 +56,12 @@ class Renderer:
         self.hud_height = 8
         self._quests_ctx = None
 
-    def render_world_and_hud(self, world, dog, npcs, pigeons, cats, crabs, modal_state=None, modal_data=None, quests=None):
+    def render_world_and_hud(self, world, dog, npcs, pigeons, cats, crabs,
+                             squirrels=None, ducks=None, dog_friends=None,
+                             modal_state=None, modal_data=None, quests=None):
+        squirrels = squirrels or []
+        ducks = ducks or []
+        dog_friends = dog_friends or []
         self.term.clear_buffer()
         self._quests_ctx = quests
 
@@ -260,6 +266,118 @@ class Renderer:
                     self.term.draw_text(px, ground_y - 1, "║        ║", Colors.GOLD)
                     self.term.draw_text(px, ground_y,     "╩        ╩", Colors.GOLD)
 
+            # Forest Pine (Las) - tall dark silhouette
+            elif prop.prop_type == 'pine':
+                if px + 8 > 0 and px < self.view_width:
+                    pine_c = Colors.BLACK if is_night else Colors.DARK_GREEN
+                    pine_c2 = Colors.DARK_GREEN if is_night else Colors.GRASS_GREEN
+                    self.term.draw_text(px + 3, 4,  "  ▲  ", pine_c2 + Colors.BOLD)
+                    self.term.draw_text(px + 2, 5,  " ▲▲▲ ", pine_c + Colors.BOLD)
+                    self.term.draw_text(px + 1, 6,  "▲▲▲▲▲", pine_c2 + Colors.BOLD)
+                    self.term.draw_text(px + 2, 7,  " ▲▲▲ ", pine_c + Colors.BOLD)
+                    self.term.draw_text(px + 1, 8,  "▲▲▲▲▲", pine_c2 + Colors.BOLD)
+                    self.term.draw_text(px,     9, "▲▲▲▲▲▲▲", pine_c + Colors.BOLD)
+                    self.term.draw_text(px + 1, 10, "▲▲▲▲▲", pine_c2 + Colors.BOLD)
+                    self.term.draw_text(px + 1, 11, "▲▲▲▲▲", pine_c + Colors.BOLD)
+                    self.term.draw_text(px + 2, 12, "▲▲▲▲▲", pine_c2 + Colors.BOLD)
+                    for ty in range(13, ground_y):
+                        self.term.draw_text(px + 3, ty, " | ", Colors.BROWN)
+                    self.term.draw_text(px + 2, ground_y, "_|_|_", Colors.BROWN + Colors.BOLD)
+                    if prop.marked:
+                        self.term.draw_text(px + 1, ground_y - 1, "💧✓", Colors.BRIGHT_CYAN + Colors.BOLD)
+
+            # Fallen Log (Las)
+            elif prop.prop_type == 'log':
+                if px + prop.width > 0 and px < self.view_width:
+                    self.term.draw_text(px, ground_y - 2, "(≈" + "=" * (prop.width - 4) + "≈)", Colors.LIGHT_BROWN + Colors.BOLD)
+                    self.term.draw_text(px, ground_y - 1, "(" + "░" * (prop.width - 2) + ")", Colors.BROWN)
+
+            # Mushroom (Las floor)
+            elif prop.prop_type == 'mushroom':
+                if px + 2 > 0 and px < self.view_width:
+                    self.term.draw_text(px, ground_y - 1, "🍄", Colors.RED)
+
+            # Fern (Las floor)
+            elif prop.prop_type == 'fern':
+                if px + 3 > 0 and px < self.view_width:
+                    self.term.draw_text(px, ground_y - 1, "\\|/", Colors.DARK_GREEN + Colors.BOLD)
+
+            # Reed (Rzeka banks)
+            elif prop.prop_type == 'reed':
+                if px + 3 > 0 and px < self.view_width:
+                    sway = "/" if (dog.anim_tick // 10) % 2 == 0 else "\\"
+                    self.term.draw_text(px, ground_y - 2, "|╥" + sway, Colors.DARK_GREEN + Colors.BOLD)
+                    self.term.draw_text(px, ground_y - 1, "|║|", Colors.GREEN)
+
+            # Rock
+            elif prop.prop_type == 'rock':
+                if px + 3 > 0 and px < self.view_width:
+                    self.term.draw_text(px, ground_y - 1, "(#)", Colors.GRAY + Colors.BOLD)
+
+            # Dog Park Fence (long rails with posts)
+            elif prop.prop_type == 'fence':
+                if px + prop.width > 0 and px < self.view_width:
+                    for col in range(prop.width):
+                        sx = px + col
+                        if not (0 <= sx < self.view_width):
+                            continue
+                        if col % 4 == 0:
+                            self.term.draw_char(sx, ground_y - 3, '╬', Colors.LIGHT_BROWN + Colors.BOLD)
+                            self.term.draw_char(sx, ground_y - 2, '║', Colors.LIGHT_BROWN)
+                            self.term.draw_char(sx, ground_y - 1, '║', Colors.LIGHT_BROWN)
+                        else:
+                            self.term.draw_char(sx, ground_y - 3, '═', Colors.LIGHT_BROWN)
+                            self.term.draw_char(sx, ground_y - 2, '─', Colors.BROWN)
+                            self.term.draw_char(sx, ground_y - 1, '─', Colors.BROWN)
+
+            # Dog Park Gate Sign
+            elif prop.prop_type == 'park_sign':
+                if px + 9 > 0 and px < self.view_width:
+                    self.term.draw_text(px - 1, ground_y - 5, "┌────────┐", Colors.BRIGHT_MAGENTA + Colors.BOLD)
+                    self.term.draw_text(px - 1, ground_y - 4, "│PSI PARK🎾│", Colors.BRIGHT_MAGENTA + Colors.BOLD)
+                    self.term.draw_text(px - 1, ground_y - 3, "└───┬────┘", Colors.BRIGHT_MAGENTA)
+                    self.term.draw_text(px + 2, ground_y - 2, "│", Colors.BROWN)
+                    self.term.draw_text(px + 2, ground_y - 1, "│", Colors.BROWN)
+
+            # Ball Pit (Psi Park)
+            elif prop.prop_type == 'ballpit':
+                if px + prop.width > 0 and px < self.view_width:
+                    balls = ""
+                    for col in range(prop.width):
+                        if col % 2 == 0:
+                            balls += "●"
+                        else:
+                            balls += "○"
+                    self.term.draw_text(px, ground_y - 1, "⚽" + balls + "⚽", Colors.BRIGHT_YELLOW + Colors.BOLD)
+                    self.term.draw_text(px, ground_y, "[" + "~" * (prop.width + 2) + "]", Colors.GOLD)
+
+            # Agility Tunnel (Psi Park)
+            elif prop.prop_type == 'tunnel':
+                if px + prop.width > 0 and px < self.view_width:
+                    self.term.draw_text(px, ground_y - 2, " .----. ", Colors.BRIGHT_BLUE + Colors.BOLD)
+                    self.term.draw_text(px, ground_y - 1, "( ⭕⭕ )", Colors.BRIGHT_CYAN + Colors.BOLD)
+                    self.term.draw_text(px, ground_y,     "`-'--'-`", Colors.BRIGHT_BLUE)
+
+            # Parked Bicycle (Ulica)
+            elif prop.prop_type == 'bike':
+                if px + 6 > 0 and px < self.view_width:
+                    self.term.draw_text(px, ground_y - 2, " _ o", Colors.BRIGHT_CYAN)
+                    self.term.draw_text(px, ground_y - 1, "/|_\\|", Colors.BRIGHT_WHITE + Colors.BOLD)
+                    self.term.draw_text(px, ground_y,     "o   o", Colors.BRIGHT_BLACK)
+
+            # Traffic Light (Ulica) - synced with the car signal!
+            elif prop.prop_type == 'traffic_light':
+                if px + 4 > 0 and px < self.view_width:
+                    g_on = world.signal_green
+                    c_g = Colors.BRIGHT_GREEN + Colors.BOLD if g_on else Colors.DARK_GRAY
+                    c_r = Colors.BRIGHT_RED + Colors.BOLD if not g_on else Colors.DARK_GRAY
+                    self.term.draw_text(px, ground_y - 5, "[=]", Colors.DARK_GRAY)
+                    self.term.draw_char(px + 1, ground_y - 4, '●' if g_on else '○', c_g)
+                    self.term.draw_char(px + 1, ground_y - 3, '●' if not g_on else '○', c_r)
+                    for ty in range(ground_y - 2, ground_y):
+                        self.term.draw_text(px + 1, ty, "|", Colors.DARK_GRAY)
+                    self.term.draw_text(px, ground_y, "[=]", Colors.DARK_GRAY)
+
         # 4. Render Food Items
         for it in world.items:
             if not it.collected:
@@ -275,11 +393,30 @@ class Renderer:
                     else: # treat
                         self.term.draw_text(ix, iy, "🍖*Smaczek*", Colors.GOLD + Colors.BOLD)
 
-        # 5. Render Toy Ball
-        bx = int(world.ball.x) - camera_x
-        by = int(world.ball.y)
-        if 0 <= bx < self.view_width:
-            self.term.draw_text(bx, by, "⚽(o)", Colors.BRIGHT_WHITE + Colors.BOLD)
+        # 5. Render Toy Balls (garden + dog park pit)
+        for ball in world.balls:
+            bx = int(ball.x) - camera_x
+            by = int(ball.y)
+            if 0 <= bx < self.view_width:
+                self.term.draw_text(bx, by, "⚽(o)", Colors.BRIGHT_WHITE + Colors.BOLD)
+
+        # 5b. Render River Ducks (on the water surface, under the dog)
+        for duck in ducks:
+            ux = int(duck.x) - camera_x
+            uy = int(duck.y)
+            if 0 <= ux < self.view_width:
+                self.term.draw_colored_sprite(ux, uy, duck.get_sprite())
+
+        # 5c. Render Street Cars (road level, above ground, below the dog)
+        for car in world.cars:
+            cx = int(car["x"]) - camera_x
+            if -6 < cx < self.view_width:
+                c_body = Colors.BRIGHT_RED if car["style"] == '🚗' else \
+                         Colors.BRIGHT_YELLOW if car["style"] == '🚕' else \
+                         Colors.BRIGHT_BLUE if car["style"] == '🚓' else Colors.BRIGHT_CYAN
+                self.term.draw_text(cx, ground_y - 3, " _[]_ ", c_body + Colors.BOLD)
+                self.term.draw_text(cx, ground_y - 2, car["style"] + "|=|", c_body + Colors.BOLD)
+                self.term.draw_text(cx, ground_y - 1, "o---o", Colors.BRIGHT_BLACK + Colors.BOLD)
 
         # 6. Render Pigeons & Crabs
         for pig in pigeons:
@@ -303,6 +440,13 @@ class Renderer:
                 if cat.speech_bubble:
                     self._draw_speech_bubble(cx - 2, cy - 2, cat.speech_bubble[0], cat.speech_bubble[1])
 
+        # 7b. Render Squirrels (Las & Ulica)
+        for sq in squirrels:
+            sx = int(sq.x) - camera_x
+            sy = int(sq.y)
+            if 0 <= sx < self.view_width:
+                self.term.draw_colored_sprite(sx, sy, sq.get_sprite())
+
         # 8. Render Humans (NPCs)
         for human in npcs:
             hx = int(human.x) - camera_x
@@ -311,6 +455,15 @@ class Renderer:
                 self.term.draw_colored_sprite(hx, hy, human.get_sprite())
                 if human.speech_bubble:
                     self._draw_speech_bubble(hx - 4, hy - 2, human.speech_bubble[0], human.speech_bubble[1])
+
+        # 8b. Render Dog Friends (Psi Park)
+        for pal in dog_friends:
+            fx = int(pal.x) - camera_x
+            fy = int(pal.y)
+            if -6 < fx < self.view_width:
+                self.term.draw_colored_sprite(fx, fy, pal.get_sprite())
+                if pal.speech_bubble:
+                    self._draw_speech_bubble(fx - 3, fy - 2, pal.speech_bubble[0], pal.speech_bubble[1])
 
         # 9. Render Dog Player + Equipped Accessory
         dx = int(dog.x) - camera_x
@@ -325,16 +478,22 @@ class Renderer:
                 hat_x = dx + 2 if dog.facing == "right" else dx + 1
                 self.term.draw_text(hat_x, max(0, dy - 1), item_info['icon'], Colors.BOLD)
 
+        # Dripping wet after swimming!
+        if dog.wet_timer > 0:
+            drip = '💦' if (dog.anim_tick // 4) % 2 == 0 else '˙'
+            self.term.draw_text(dx + 1, max(0, dy - 1), drip, Colors.BRIGHT_CYAN + Colors.BOLD)
+
         # Dog speech / action bubble
         if dog.speech_bubble:
             self._draw_speech_bubble(dx - 3, dy - 2, dog.speech_bubble[0], dog.speech_bubble[1])
 
-        # 10. Render Biome Ground & Terrain
+        # 10. Render Biome Ground & Terrain (driven by the ZONES table)
         for x in range(self.view_width):
             world_x = camera_x + x
-            
-            # Biome Ground Textures:
-            if world_x < 105: # Ogród
+            zone = world.zone_at(world_x)
+            style = zone["ground"]
+
+            if style == "garden":  # Ogród
                 grass_ch = "w" if world_x % 3 == 0 else ("W" if world_x % 3 == 1 else "v")
                 flower_ch = "🌸" if world_x % 15 == 0 else ("🌼" if world_x % 21 == 0 else grass_ch)
                 if flower_ch in ["🌸", "🌼"]:
@@ -343,8 +502,25 @@ class Renderer:
                     self.term.draw_char(x, ground_y, grass_ch, Colors.GRASS_GREEN + Colors.BOLD)
                 self.term.draw_char(x, ground_y + 1, "░", Colors.BROWN)
 
-            elif world_x < 210: # Park Miejski
-                if 143 <= world_x <= 165: # Stream under bridge
+            elif style == "forest":  # Las
+                grass_ch = "v" if world_x % 3 == 0 else "W"
+                self.term.draw_char(x, ground_y, grass_ch, Colors.DARK_GREEN + Colors.BOLD)
+                if world_x % 7 == 0:
+                    self.term.draw_char(x, ground_y, '·', Colors.BRIGHT_BLACK)  # pine needles
+                self.term.draw_char(x, ground_y + 1, "▒", Colors.BROWN)
+
+            elif style == "river":  # Rzeka
+                if world.is_water(world_x):
+                    wave_ch = "≈" if (dog.anim_tick // 3 + world_x) % 2 == 0 else "~"
+                    self.term.draw_char(x, ground_y, wave_ch, Colors.BRIGHT_CYAN + Colors.BOLD)
+                    self.term.draw_char(x, ground_y + 1, "▓", Colors.BLUE)
+                else:
+                    grass_ch = "W" if world_x % 2 == 0 else "w"
+                    self.term.draw_char(x, ground_y, grass_ch, Colors.DARK_GREEN + Colors.BOLD)
+                    self.term.draw_char(x, ground_y + 1, "░", Colors.BROWN)
+
+            elif style == "park":  # Park Miejski
+                if PARK_STREAM_MIN <= world_x <= PARK_STREAM_MAX:  # Stream under bridge
                     wave_ch = "~" if (dog.anim_tick // 4 + world_x) % 2 == 0 else "≈"
                     self.term.draw_char(x, ground_y, wave_ch, Colors.BRIGHT_CYAN + Colors.BOLD)
                     self.term.draw_char(x, ground_y + 1, "▓", Colors.BLUE)
@@ -353,8 +529,28 @@ class Renderer:
                     self.term.draw_char(x, ground_y, grass_ch, Colors.DARK_GREEN + Colors.BOLD)
                     self.term.draw_char(x, ground_y + 1, "░", Colors.BROWN)
 
-            elif world_x < 315: # Słoneczna Plaża
-                if world_x > 295: # Ocean shore
+            elif style == "dogpark":  # Psi Park
+                grass_ch = "W" if world_x % 2 == 0 else "w"
+                if world_x % 23 == 0:
+                    self.term.draw_text(x, ground_y, "🎾", Colors.BRIGHT_YELLOW)
+                else:
+                    self.term.draw_char(x, ground_y, grass_ch, Colors.GRASS_GREEN + Colors.BOLD)
+                self.term.draw_char(x, ground_y + 1, "░", Colors.BROWN)
+
+            elif style == "street":  # Ulica
+                if ZEBRA_MIN <= world_x <= ZEBRA_MAX:
+                    zeb = "█" if ((world_x - ZEBRA_MIN) // 2) % 2 == 0 else "▂"
+                    col = Colors.BRIGHT_WHITE if zeb == "█" else Colors.BRIGHT_BLACK
+                    self.term.draw_char(x, ground_y, zeb, col + Colors.BOLD)
+                elif (world_x - zone["start"]) < 3 or (zone["end"] - world_x) <= 3:
+                    self.term.draw_char(x, ground_y, "▄", Colors.WHITE)  # krawężnik / curb
+                else:
+                    lane = "-" if (world_x + dog.anim_tick // 20) % 8 < 3 else "▂"
+                    self.term.draw_char(x, ground_y, lane, Colors.BRIGHT_BLACK + Colors.BOLD)
+                self.term.draw_char(x, ground_y + 1, "▒", Colors.DARK_GRAY)
+
+            elif style == "beach":  # Słoneczna Plaża
+                if world_x > zone["end"] - 20:  # Ocean shore
                     wave_ch = "≈" if (dog.anim_tick // 3 + world_x) % 2 == 0 else "~"
                     self.term.draw_char(x, ground_y, wave_ch, Colors.BRIGHT_CYAN + Colors.BOLD)
                     self.term.draw_char(x, ground_y + 1, "▓", Colors.BLUE)
@@ -363,11 +559,23 @@ class Renderer:
                     self.term.draw_char(x, ground_y, sand_ch, Colors.GOLD)
                     self.term.draw_char(x, ground_y + 1, "▒", Colors.BROWN)
 
-            else: # Tor Agility
+            else:  # turf — Tor Agility
                 turf_ch = "=" if world_x % 2 == 0 else "_"
                 turf_col = Colors.BRIGHT_RED if world_x % 6 < 3 else Colors.BRIGHT_WHITE
                 self.term.draw_char(x, ground_y, turf_ch, turf_col + Colors.BOLD)
                 self.term.draw_char(x, ground_y + 1, "░", Colors.DARK_GRAY)
+
+        # 10b. Fireflies over the Las at night ✨
+        if is_night:
+            for x in range(self.view_width):
+                world_x = camera_x + x
+                if zone_at(world_x)["id"] == "forest":
+                    if (world_x * 7 + world.time_tick // 25) % 29 == 0:
+                        fy = 13 + (world_x * 5) % 5
+                        self.term.draw_char(x, fy, '✦', Colors.BRIGHT_YELLOW)
+                    elif (world_x * 13 + world.time_tick // 40) % 37 == 0:
+                        fy = 12 + (world_x * 3) % 6
+                        self.term.draw_char(x, fy, '·', Colors.BRIGHT_YELLOW + Colors.DIM)
 
         # 11. Render Modals (if active)
         if modal_state == "tricks":

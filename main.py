@@ -2,7 +2,8 @@
 """
 🐕 Tamagotchi Dog Simulator 2D Platformer 🐾
 Kolorowa platformówka 2D w ASCII Art z symulacją potrzeb Tamagotchi,
-cyklem dnia i nocy, 4 biomami, akademią sztuczek, sklepikiem i torami przeszkód!
+cyklem dnia i nocy, 8 biomami (Ogród, Las, Rzeka, Park, Psi Park, Ulica,
+Plaża, Agility), akademią sztuczek, sklepikiem, pływaniem i torami przeszkód!
 """
 
 import sys
@@ -11,7 +12,7 @@ import signal
 from game.engine import Terminal, Colors
 from game.dog import Dog, BREEDS, TRICKS, SHOP_ITEMS
 from game.world import World
-from game.npc import HumanNPC, Pigeon, Cat, Crab
+from game.npc import HumanNPC, Pigeon, Cat, Crab, Squirrel, Duck, DogFriend
 from game.ui import (Renderer, draw_breed_selection_menu, draw_start_menu,
                      draw_name_input)
 from game.audio import audio
@@ -47,7 +48,7 @@ def run_game(breed_key="corgi", terminal=None, resume=False, name="", meta=None)
         terminal = Terminal(width=105, height=28)
         terminal.enter_fullscreen()
 
-    world = World(width=420, height=22)
+    world = World(width=840, height=22)
     renderer = Renderer(terminal)
 
     greeting = None
@@ -88,33 +89,54 @@ def run_game(breed_key="corgi", terminal=None, resume=False, name="", meta=None)
     else:
         dog.say(f"Cześć! Jestem {dog.breed.name}! 🐾", Colors.BRIGHT_GREEN + Colors.BOLD, 90)
 
-    # Spawn Diverse NPCs across the 4 Biomes
+    # Spawn Diverse NPCs across the 8 Biomes
     npcs = [
         HumanNPC("Pan Ogrodnik", x=58, y=16, role="Sprzedawca", color=Colors.GOLD, min_x=53, max_x=64),
         HumanNPC("Pani Ania", x=85, y=16, role="Spacerowicz", color=Colors.PINK, min_x=72, max_x=102),
-        HumanNPC("Pan Tomek", x=135, y=16, role="Biegacz", color=Colors.BRIGHT_BLUE, min_x=115, max_x=175),
-        HumanNPC("Kasia", x=185, y=16, role="Dziecko z piłką", color=Colors.BRIGHT_MAGENTA, min_x=170, max_x=205),
-        HumanNPC("Marek Plażowicz", x=245, y=16, role="Plażowicz", color=Colors.BRIGHT_YELLOW, min_x=230, max_x=280),
-        HumanNPC("Sędzia Agility", x=322, y=16, role="Sędzia", color=Colors.BRIGHT_WHITE, min_x=318, max_x=328)
+        HumanNPC("Pan Tomek", x=345, y=16, role="Biegacz", color=Colors.BRIGHT_BLUE, min_x=325, max_x=385),
+        HumanNPC("Kasia", x=395, y=16, role="Dziecko z piłką", color=Colors.BRIGHT_MAGENTA, min_x=380, max_x=415),
+        HumanNPC("Leśniczy", x=160, y=16, role="Leśniczy", color=Colors.DARK_GREEN, min_x=115, max_x=200),
+        HumanNPC("Marek Plażowicz", x=665, y=16, role="Plażowicz", color=Colors.BRIGHT_YELLOW, min_x=650, max_x=700),
+        HumanNPC("Sędzia Agility", x=742, y=16, role="Sędzia", color=Colors.BRIGHT_WHITE, min_x=738, max_x=748)
     ]
 
     pigeons = [
         Pigeon(25, 18),
         Pigeon(82, 18),
-        Pigeon(150, 12), # on bridge
-        Pigeon(188, 14), # on picnic table
-        Pigeon(240, 18)
+        Pigeon(360, 12), # on park bridge
+        Pigeon(398, 14), # on picnic table
+        Pigeon(660, 18)
     ]
 
     cats = [
-        Cat(78, 15),  # on garden bench
-        Cat(192, 14)  # on park picnic table
+        Cat(78, 15),   # on garden bench
+        Cat(402, 14),  # on park picnic table
+        Cat(592, 16),  # na płocie przy ulicy
+        Cat(608, 14)   # na ławce przy ulicy
     ]
 
     crabs = [
-        Crab(235, 18),
-        Crab(265, 18),
-        Crab(295, 18)
+        Crab(655, 18),
+        Crab(685, 18),
+        Crab(715, 18)
+    ]
+
+    squirrels = [
+        Squirrel(120, 110, 135),   # Las zachodni
+        Squirrel(150, 140, 170),   # Las środkowy
+        Squirrel(195, 175, 205),   # Las wschodni
+        Squirrel(575, 545, 615)    # przebiezająca przez ulicę 🐿️🚗
+    ]
+
+    ducks = [
+        Duck(235),
+        Duck(290)
+    ]
+
+    dog_friends = [
+        DogFriend("Burek", 440, 424, 468, color=Colors.BRIGHT_BLACK),
+        DogFriend("Luna", 490, 480, 515),
+        DogFriend("Azor", 510, 480, 518, color=Colors.BRIGHT_WHITE)
     ]
 
     clock_tick = 0
@@ -293,6 +315,15 @@ def run_game(breed_key="corgi", terminal=None, resume=False, name="", meta=None)
             for cr in crabs:
                 cr.update(dog)
 
+            for sq in squirrels:
+                sq.update(dog, world)
+
+            for dk in ducks:
+                dk.update(dog, world)
+
+            for pal in dog_friends:
+                pal.update(dog, world)
+
         # Daily quest progress & rollover (only while the world simulates).
         if not paused:
             if clock_tick % 300 == 0:  # ~every 10s: did the calendar day flip?
@@ -309,6 +340,7 @@ def run_game(breed_key="corgi", terminal=None, resume=False, name="", meta=None)
         # Render frame
         renderer.render_world_and_hud(
             world, dog, npcs, pigeons, cats, crabs,
+            squirrels=squirrels, ducks=ducks, dog_friends=dog_friends,
             modal_state=modal_state,
             modal_data=(shop_selected_idx if modal_state == "shop"
                         else quests_state if modal_state == "quests" else None),

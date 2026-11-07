@@ -28,6 +28,14 @@ QUEST_POOL = [
      "text": "Przebiegnij razem {n} m 🐾"},
     {"id": "pee",   "counter": "peeled_spots",      "targets": (2, 3),         "bones": 4, "xp": 15,
      "text": "Zrób siku {n} razy 💦"},
+    {"id": "squirrel", "counter": "squirrels_chased", "targets": (2, 3, 4),    "bones": 5, "xp": 30,
+     "text": "Obszczekaj {n} wiewiórki 🐿️"},
+    {"id": "swim",  "counter": "swims",              "targets": (2, 3, 5),     "bones": 5, "xp": 30,
+     "text": "Popływaj w rzece {n} razy 🏊"},
+    {"id": "cross", "counter": "crossings_safe",     "targets": (2, 3, 4),     "bones": 6, "xp": 35,
+     "text": "Przejdź przez pasy {n} razy 🚸"},
+    {"id": "dogplay", "counter": "dog_plays",        "targets": (2, 3),        "bones": 7, "xp": 40,
+     "text": "Baw się z psimi kumplami {n} razy 🎾"},
 ]
 
 _BY_ID = {q["id"]: q for q in QUEST_POOL}

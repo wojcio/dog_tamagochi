@@ -28,7 +28,7 @@ tech_stack:
 # 🐕 Dog Tamagotchi 2D Platformer (Wersja Kompletna)
 
 > [!abstract] Podsumowanie Projektu
-> Rozbudowany, konsolowy symulator psa **Tamagotchi** połączony z dynamiczną **platformówką 2D w kolorowym ASCII Art**. Świat gry rozciąga się na **4 zróżnicowane biomy**, zawiera płynny **cykl dnia i nocy**, **system sztuczek z poziomami XP**, **sklepik z akcesoriami u Pana Ogrodnika**, **drabinki parkourowe na drzewa i dachy**, **mechanikę regeneracyjnego snu w budzie** oraz **tor przeszkód Agility** z inteligentnym stoperem czasu. Całość udźwiękowiona jest autorskim syntezatorem fal prostokątnych **PC Speaker (8-bit chiptune)**.
+> Rozbudowany, konsolowy symulator psa **Tamagotchi** połączony z dynamiczną **platformówką 2D w kolorowym ASCII Art**. Świat gry rozciąga się na **8 zróżnicowanych biomów**, zawiera płynny **cykl dnia i nocy**, **system sztuczek z poziomami XP**, **sklepik z akcesoriami u Pana Ogrodnika**, **drabinki parkourowe na drzewa i dachy**, **mechanikę regeneracyjnego snu w budzie**, **pływanie w rzece**, **przechodzenie przez ulicę na pasach** oraz **tor przeszkód Agility** z inteligentnym stoperem czasu. Całość udźwiękowiona jest autorskim syntezatorem fal prostokątnych **PC Speaker (8-bit chiptune)**.
 
 ---
 
@@ -54,6 +54,8 @@ projekty cc65 budowane przez `make` (szczegóły w ich README).
 Testy:
 ```bash
 python3 tests/test_render_diff.py        # silnik renderowania (emulator VT)
+python3 tests/test_biomes.py             # 8 biomów: pływanie, ruch uliczny, NPC, zapis v2
+python3 tests/run_pty_zone_walk.py       # żywy test pty: adopcja + przemarsz przez wszystkie biomy
 cd tests/nes && npm install && npm run setup && npm test   # ROM-y NES (jsnes)
 ```
 
@@ -70,27 +72,33 @@ cd tests/nes && npm install && npm run setup && npm test   # ROM-y NES (jsnes)
 
 ---
 
-## 🗺️ 4 Połączone Biomy Świata (420 klatek szerokości)
+## 🗺️ 8 Połączonych Biomów Świata (840 kolumn szerokości)
 
 ```text
-               \ | /                                 .---.
-              --(☀)--                               (  ☁  )
-               / | \                                 `---'
-  [ OGRÓD & DOM ]             [ PARK MIEJSKI ]         [ SŁONECZNA PLAŻA ]       [ TOR AGILITY ]
-┌──────────┐                 (~~~~~~) ⛲                     /----\  ⛱️           ╔════════╗
-│ SKLEPIK 🦴│                 [====]                        /______\            ║ 🏁START║  ||||  [====]  ( ⭕ )  ╔════════╗
-│ 🎩🎀🕶️👑 │       (o)        [======]   =================      |               ║   >>   ║  🚩🚩  |    |   |     ║ 🏆META ║
-└──────────┘      =[|]=         | |      |               |   [___/ ] |          ╩        ╩  ┴  ┴  |    |   ┴     ╩        ╩
-══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
- w   🌸   W   w   v   w   W   w   ~≈~≈~≈~≈~   W   w   W   v  ░▒░▒░▒░▒░ ~≈~≈~   =_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_
+                \ | /                                  .---.
+               --(☀)--                                 (  ☁  )
+                / | \                                  `---'
+ [ OGRÓD & DOM ]   [ LAS 🌲 ]    [   RZEKA 🌊   ]  [ PARK MIEJSKI ]   [ PSI PARK 🎾 ]    [   ULICA 🚗   ]   [ SŁONECZNA PLAŻA ]    [ TOR AGILITY ]
+┌──────────┐                 ,~~.                            ┌─┴─────┐
+│ SKLEPIK 🦴│    ▲   |≡|≈   ( ● )  ~≈~🛶(===)~≈~  🦆    │PSI PARK│   ▄──────▄   /----\  ⛱️
+│ 🎩🎀🕶️👑 │   ▲▲▲ /===\  ~≈~    ~≈~🪨  ~≈~     ⛲   └───┬─────┘  🚗 ║ZEBRA║  /______\   ╔════════╗
+└──────────┘  ▲▲▲ | | 🐿️ ~≈~🦆 kamienie ~≈~🪨   🌉    ●●●[]  ⚽  🚓 ▀▀▀▀▀▀   |  [___/ ] |  ║ 🏁START║  ||||  [====]  ( ⭕ )  ║ 🏆META ║
+════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+ w  🌸 W  v   ·W·pine·   ~≈~ kaczki ~≈~   ~≈strumień~≈   🎾 W W 🎾 W   ▂█▂pasy▂█▂░   ░▒ piasek ░▒ ~≈~   =_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_
+ x:0          105         210              315             420          525           630             735          840
 ```
 
 1. 🏡 **Ogród & Dom (x: 0–105):** Buda z kocykiem do snu `🏠`, miski z karmą `🥣`, hydrant `🚰` oraz stragan **Sklepiku u Pana Ogrodnika `👨‍🌾`**.
-2. 🌳 **Park Miejski & Mostek (x: 105–210):** Dębowa aleja, fontanna tryskająca wodą `⛲`, wysoki drewniany mostek nad strumieniem `🌉`, pikniki i spacerowicze.
-3. 🏖️ **Słoneczna Plaża dla Psów (x: 210–315):** Złocisty piasek `░▒░`, kolorowe parasole `⛱️`, leżaki, szum morskich fal `~≈~` oraz uciekające kraby `🦀`!
-4. 🏆 **Tor Przeszkód Agility (x: 315–420):** Brama startowa `[🏁 START]`, płotki `[====]`, tyczki do slalomu `🚩`, obręcz `( ⭕ )`, brama mety `[🏆 META]` oraz stoper z automatycznym resetem przy cofnięciu się za linię startu.
+2. 🌲 **Las (x: 105–210):** Parkour po koronach sosien `▲`, przewrócone kłody z kośćmi w korze, muchomory `🍄`, paprocie, **Leśniczy** na spacerze, **wiewiórki** `🐿️` (obszczekaj je!) oraz świetliki `✦` nocą między drzewami.
+3. 🌊 **Rzeka (x: 210–315):** Pływaj! Wejdź do wody między brzegami — piesek płynie `🏊` (wolniej, pluska łapkami, po wyjściu trzęsie mokrym futrem `💦`). Sucha trasa prowadzi po kamieniach i liściach grążeli, **dryfująca kłoda** wiezie psa na drugą stronę, kaczki `🦆` przepływają rzekę, a ryba `🐟` czeka na środku.
+4. 🌳 **Park Miejski & Mostek (x: 315–420):** Dębowa aleja, fontanna tryskająca wodą `⛲`, wysoki drewniany mostek nad strumieniem `🌉`, pikniki i spacerowicze.
+5. 🎾 **Psi Park / Wybieg dla Psów (x: 420–525):** Ogrodzenie z bramą, **Aleja 6 Hydrantów** (oznacz wszystkie klawiszem `S` → bonus +5🦴 +20 XP!), dołek z piłkami, tunel oraz **psie kumple** (Burek, Luna, Azor) — obszczekaj ich `B`, a zaproszą Cię do wspólnych zoomies 🎾💨.
+6. 🚗 **Ulica (x: 525–630):** Jeżdżą samochody! Sygnalizacja cyklicznie zatrzymuje je na **zebrze** — przejdź po pasach przy zielonem świetle, a dostaniesz +5 XP za bezpieczne przejście 🚸. Samochód tylko straszy (`BZZZ!`, −5 szczęścia), bez gryzienia. Koty obserwują z płotu, wiewiórka próbuje przebiec przez jezdnię.
+7. 🏖️ **Słoneczna Plaża dla Psów (x: 630–735):** Złocisty piasek `░▒░`, kolorowe parasole `⛱️`, leżaki, szum morskich fal `~≈~` oraz uciekające kraby `🦀`!
+8. 🏆 **Tor Przeszkód Agility (x: 735–840):** Brama startowa `[🏁 START]`, płotki `[====]`, tyczki do slalomu `🚩`, obręcz `( ⭕ )`, brama mety `[🏆 META]` oraz stoper z automatycznym resetem przy cofnięciu się za linię startu.
 
 ---
+
 
 ## 🐶 Grywalne Rasy Psów
 
@@ -140,6 +148,19 @@ Gracz zbiera **Psie Kostki `🦴`** (zjadanie przysmaków, wykonywanie sztuczek,
 
 ---
 
+## 📋 Codzienne Zadania `[R]`
+
+Każdego dnia piesek dostaje **3 losowe zadania** (nowy zestaw o północy 🌅) z nagrodami w kostkach 🦴 i XP. Obok klasyków (karmienie, głaskanie, sztuczki, piłka) pojawiły się zadania terenowe dla nowych biomów:
+
+| Zadanie | Biom | Cel |
+| :--- | :--- | :--- |
+| 🐿️ Obszczekaj wiewiórki | Las / Ulica | 2–4 sztuki |
+| 🏊 Popływaj w rzece | Rzeka | 2–5 wejść do wody |
+| 🚸 Przejdź przez pasy | Ulica | 2–4 bezpieczne przejścia |
+| 🎾 Baw się z psimi kumplami | Psi Park | 2–3 sesje zoomies |
+
+---
+
 ## ⌨️ Pełna Klawiszologia
 
 | Klawisz | Akcja |
@@ -147,7 +168,8 @@ Gracz zbiera **Psie Kostki `🦴`** (zjadanie przysmaków, wykonywanie sztuczek,
 | **`←` / `→`** lub **`A` / `D`** | Poruszanie się w lewo / w prawo |
 | **`↑` / `W`** lub **`Spacja`** | Skok na platformy, dachy i gałęzie |
 | **`↓` / `S` (na platformie)** | Zeskoczenie z platformy w dół |
-| **`B` / `H`** | Szczekanie (`HAU! HAU!`) |
+| **`B` / `H`** | Szczekanie (`HAU! HAU!`) — płoszy wiewiórki 🐿️, zaprasza psie kumple do zabawy 🎾, robi plusk nad rzeką |
+| **`↑` / `W` / `Spacja` (w wodzie)** | Pluskanie łapkami w stylu dowolnym 🏊 — na powierzchni skok zamienia się w wesołe plum! |
 | **`Z` / `Q` (przy budzie)** | **Położenie się spać w budzie i regeneracja energii 💤** |
 | **`T`** | Otwarcie / zamknięcie menu Akademii Sztuczek |
 | **`1` – `5`** | Bezpośrednie wykonanie sztuczki |
@@ -166,7 +188,7 @@ Gracz zbiera **Psie Kostki `🦴`** (zjadanie przysmaków, wykonywanie sztuczek,
 | :--- | :---: | :---: | :---: |
 | **Rozmiar okna / Terminala** | `80 × 25` | `80 × 25` | **`105 × 28`** *(panoramiczny)* |
 | **Rozmiar Viewportu Świata** | `60 × 25` *(statyczny)* | `40 × 25` *(scrolling)* | **`105 × 20`** *(płynny 2D scrolling)* |
-| **Całkowita szerokość świata** | 60 kafli | 96 kafli | **`420` kolumn** *(4 biomy)* |
+| **Całkowita szerokość świata** | 60 kafli | 96 kafli | **`840` kolumn** *(8 biomów)* |
 | **Układ panelu HUD** | Po prawej (`20 × 25`) | Po prawej (`40 × 25`) | **Na dole ekranu (`105 × 8`)** |
 | **Paleta kolorów** | 16 kolorów DOS | 16 kolorów DOS | **256 kolorów ANSI** |
 | **Buforowanie klatek** | Zapis do VRAM B800h | Zapis do VRAM B800h | **ANSI Double Buffering (0 migotania)** |

@@ -17,7 +17,7 @@ import tempfile
 
 SAVE_DIR = os.path.join(os.path.expanduser("~"), ".dog_tamagotchi")
 SAVE_PATH = os.path.join(SAVE_DIR, "save.json")
-VERSION = 1
+VERSION = 2
 
 DAY_SECONDS = 86400.0
 
@@ -101,10 +101,15 @@ def build_state(dog, world, meta, quests=None):
             "tricks_performed": dog.tricks_performed,
             "ball_fetches": getattr(dog, "ball_fetches", 0),
             "walk_distance": dog.walk_distance,
+            "squirrels_chased": getattr(dog, "squirrels_chased", 0),
+            "swims": getattr(dog, "swims", 0),
+            "crossings_safe": getattr(dog, "crossings_safe", 0),
+            "dog_plays": getattr(dog, "dog_plays", 0),
         },
         "world": {
             "agility_best_time": getattr(world, "agility_best_time", None),
             "day_time": getattr(world, "day_time", 0.25),
+            "alley_bonus_done": bool(getattr(world, "alley_bonus_done", False)),
         },
         "quests": quests if isinstance(quests, dict) else None,
     }
@@ -168,7 +173,8 @@ def apply_to_dog(data, dog):
     dog.equipped_item = eq if isinstance(eq, str) and eq in dog.inventory else None
 
     for key in ("bones_eaten", "times_petted", "peeled_spots", "tricks_performed",
-                "ball_fetches"):
+                "ball_fetches", "squirrels_chased", "swims", "crossings_safe",
+                "dog_plays"):
         try:
             setattr(dog, key, max(0, int(float(d.get(key, 0) or 0))))
         except (TypeError, ValueError):
@@ -187,6 +193,7 @@ def apply_to_world(data, world):
         world.day_time = _clamp(float(w.get("day_time", 0.25)), 0.0, 1.0)
     except (TypeError, ValueError):
         world.day_time = 0.25
+    world.alley_bonus_done = bool(w.get("alley_bonus_done", False))
     return world
 
 
